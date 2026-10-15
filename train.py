@@ -1,4 +1,5 @@
 import torch
+import os
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from model import SimpleNeuralNetwork
@@ -8,8 +9,10 @@ args = get_args()
 
 # 1. Transformação para converter as imagens em tensores e normaliza-las
 transform = transforms.Compose([
+    transforms.RandomAffine(30, translate=(0.1, 0.1), scale=(0.9, 1.1)),
     transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
+    transforms.Normalize((0.1307,), (0.3081,)),
+    transforms.RandomErasing(p=0.1, value='random'),
 ])
 
 # 2. Baixar e carregar o conjunto de dados
@@ -21,9 +24,11 @@ train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 print(f"Todos os dados foram carregados com sucesso! Total de {len(train_loader)} lotes de treino.")
 
 # 4. Criar a rede
-model = SimpleNeuralNetwork()
-if args.input != 'mnist.pth':
-    model.load_state_dict(torch.load(f'data/models/{args.input}'))
+model = SimpleNeuralNetwork(args.input)
+file = f'data/models/mnist-{args.input}.pth'
+
+if os.path.exists(file):
+    model.load_state_dict(torch.load(file))
 
 loss_fn = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
@@ -57,5 +62,5 @@ for epoch in range(epochs):
             
 print("Treinamento concluido!")
 
-torch.save(model.state_dict(), f'data/models/{args.output}')
-print("Modelo salvo com sucesso como mnist.pth!")
+torch.save(model.state_dict(), file)
+print(f"Modelo salvo com sucesso como {file}!")

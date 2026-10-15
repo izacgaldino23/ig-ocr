@@ -19,8 +19,9 @@ test_dataset = datasets.MNIST('./data', train=False, transform=transform)
 test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
 
 # 4. modelo
-model = SimpleNeuralNetwork()
-model.load_state_dict(torch.load(f'data/models/{args.input}'))
+model = SimpleNeuralNetwork(args.input)
+file = f'data/models/mnist-{args.input}.pth'
+model.load_state_dict(torch.load(file))
 
 # desligando o calculo de gradientes
 model.eval()

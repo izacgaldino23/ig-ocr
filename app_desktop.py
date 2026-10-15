@@ -18,8 +18,9 @@ class DigitRecognizerApp:
         self.root.title("Reconhecedor de Dígitos MNIST")
 
         # 1. Carregando o modelo treinado
-        self.model = SimpleNeuralNetwork()
-        self.model.load_state_dict(torch.load(f'data/models/{args.input}'))
+        self.model = SimpleNeuralNetwork(args.input)
+        file = f'data/models/mnist-{args.input}.pth'
+        self.model.load_state_dict(torch.load(file))
         self.model.eval()
 
         # 2. Coluna esquerda: área de desenho fixa

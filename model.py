@@ -1,39 +1,34 @@
 from torch import nn
 
+MODELS = [
+    [28*28, 128, 64, 10]
+]
+
 class SimpleNeuralNetwork(nn.Module):
-    def __init__(self):
+    def __init__(self, model_idx=0):
         super(SimpleNeuralNetwork, self).__init__()
+
+        if not 0 <= model_idx < len(MODELS):
+            raise ValueError(f"Índice de modelo inválido: {model_idx}")
+
+        model_layers = MODELS[model_idx]
         
-        # achata a imagem de 28x28 (bidimensional) para 784 (um vetor unidimensional)
         self.flatten = nn.Flatten()
         
-        # Camada oculta 1
-        self.fc1 = nn.Linear(28*28, 128)
-        self.relu1 = nn.ReLU()
-        
-        # Camada oculta 2
-        self.fc2 = nn.Linear(128, 128)
-        self.relu2 = nn.ReLU()
-        
-        # camada oculta 3
-        self.fc3 = nn.Linear(128, 64)
-        self.relu3 = nn.ReLU()
-        
-        # Camada de saida
-        self.fc4 = nn.Linear(64, 10)
+        # Lista para armazenar dinamicamente as camadas
+        layers = []
+        for i in range(len(model_layers) - 1):
+            # Adiciona a camada Linear
+            layers.append(nn.Linear(model_layers[i], model_layers[i+1]))
+            
+            # Adiciona a ReLU em todas as camadas, exceto na última (saída)
+            if i < len(model_layers) - 2:
+                layers.append(nn.ReLU())
+                
+        # Empacota tudo em um Sequential
+        self.network = nn.Sequential(*layers)
         
     def forward(self, x):
         x = self.flatten(x)
-        
-        x = self.fc1(x)
-        x = self.relu1(x)
-        
-        x = self.fc2(x)
-        x = self.relu2(x)
-        
-        x = self.fc3(x)
-        x = self.relu3(x)
-        
-        x = self.fc4(x)
-        
+        x = self.network(x)
         return x
