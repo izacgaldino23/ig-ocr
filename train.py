@@ -13,7 +13,7 @@ transform = transforms.Compose([
 ])
 
 # 2. Baixar e carregar o conjunto de dados
-train_dataset = datasets.MNIST('./data', train=True, download=True, transform=transform)
+train_dataset = datasets.MNIST('./data', train=True, transform=transform)
 
 # 3. Criar o dataloader para separar os dados em lotes
 train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
@@ -22,6 +22,8 @@ print(f"Todos os dados foram carregados com sucesso! Total de {len(train_loader)
 
 # 4. Criar a rede
 model = SimpleNeuralNetwork()
+if args.input != 'mnist.pth':
+    model.load_state_dict(torch.load(f'data/models/{args.input}'))
 
 loss_fn = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)

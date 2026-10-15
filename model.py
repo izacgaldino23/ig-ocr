@@ -7,16 +7,20 @@ class SimpleNeuralNetwork(nn.Module):
         # achata a imagem de 28x28 (bidimensional) para 784 (um vetor unidimensional)
         self.flatten = nn.Flatten()
         
-        # Camada oculta
+        # Camada oculta 1
         self.fc1 = nn.Linear(28*28, 128)
         self.relu1 = nn.ReLU()
         
-        # segunda camada oculta
-        self.fc2 = nn.Linear(128, 64)
+        # Camada oculta 2
+        self.fc2 = nn.Linear(128, 128)
         self.relu2 = nn.ReLU()
         
+        # camada oculta 3
+        self.fc3 = nn.Linear(128, 64)
+        self.relu3 = nn.ReLU()
+        
         # Camada de saida
-        self.fc3 = nn.Linear(64, 10)
+        self.fc4 = nn.Linear(64, 10)
         
     def forward(self, x):
         x = self.flatten(x)
@@ -28,5 +32,8 @@ class SimpleNeuralNetwork(nn.Module):
         x = self.relu2(x)
         
         x = self.fc3(x)
+        x = self.relu3(x)
+        
+        x = self.fc4(x)
         
         return x

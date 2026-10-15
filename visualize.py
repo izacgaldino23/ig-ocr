@@ -14,11 +14,11 @@ transform = transforms.Compose([
 ])
 
 # 2. Baixar e carregar o conjunto de dados
-test_dataset = datasets.MNIST('./data', train=False, download=True, transform=transform)
+test_dataset = datasets.MNIST('./data', train=False, transform=transform)
 
 # 3. modelo
 model = SimpleNeuralNetwork()
-model.load_state_dict(torch.load(f'data/models/{args.output}'))
+model.load_state_dict(torch.load(f'data/models/{args.input}'))
 
 # desligando o calculo de gradientes
 model.eval()
@@ -46,7 +46,7 @@ with torch.no_grad():
             
             wrong += 1
 
-        if wrong == 4 or i == len(test_dataset) - 1:
+        if wrong == 5 or i == len(test_dataset) - 1:
             break
         i += 1
         
