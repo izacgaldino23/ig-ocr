@@ -2,6 +2,9 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from model import SimpleNeuralNetwork
+from args import get_args
+
+args = get_args()
 
 # 1. Transformação para converter as imagens em tensores e normaliza-las
 transform = transforms.Compose([
@@ -52,5 +55,5 @@ for epoch in range(epochs):
             
 print("Treinamento concluido!")
 
-torch.save(model.state_dict(), 'mnist.pth')
+torch.save(model.state_dict(), f'data/models/{args.output}')
 print("Modelo salvo com sucesso como mnist.pth!")

@@ -9,17 +9,24 @@ class SimpleNeuralNetwork(nn.Module):
         
         # Camada oculta
         self.fc1 = nn.Linear(28*28, 128)
+        self.relu1 = nn.ReLU()
         
-        # função de ativação
-        self.relu = nn.ReLU()
+        # segunda camada oculta
+        self.fc2 = nn.Linear(128, 64)
+        self.relu2 = nn.ReLU()
         
         # Camada de saida
-        self.fc2 = nn.Linear(128, 10)
+        self.fc3 = nn.Linear(64, 10)
         
     def forward(self, x):
         x = self.flatten(x)
+        
         x = self.fc1(x)
-        x = self.relu(x)
+        x = self.relu1(x)
+        
         x = self.fc2(x)
+        x = self.relu2(x)
+        
+        x = self.fc3(x)
         
         return x

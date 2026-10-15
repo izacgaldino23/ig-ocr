@@ -1,7 +1,11 @@
 import torch
+import argparse
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from model import SimpleNeuralNetwork
+from args import get_args
+
+args = get_args()
 
 # 1. Transformação para converter as imagens em tensores e normaliza-las
 transform = transforms.Compose([
@@ -17,7 +21,7 @@ test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
 
 # 4. modelo
 model = SimpleNeuralNetwork()
-model.load_state_dict(torch.load('mnist.pth'))
+model.load_state_dict(torch.load(f'data/models/{args.output}'))
 
 # desligando o calculo de gradientes
 model.eval()
