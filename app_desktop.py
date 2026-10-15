@@ -1,5 +1,5 @@
 import tkinter as tk
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageTk
 import torch
 from torchvision import transforms
 from model import SimpleNeuralNetwork
@@ -7,38 +7,71 @@ from args import get_args
 
 args = get_args()
 
+BAR_WIDTH = 160
+BAR_HEIGHT = 14
+PREVIEW_SCALE = 4  # 28x28 ampliado 4x para inspeção visual
+
+
 class DigitRecognizerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Reconhecedor de Dígitos MNIST")
-        
+
         # 1. Carregando o modelo treinado
         self.model = SimpleNeuralNetwork()
         self.model.load_state_dict(torch.load(f'data/models/{args.input}'))
         self.model.eval()
 
-        # 2. Criando a área de desenho (Canvas)
+        # 2. Coluna esquerda: área de desenho fixa
+        left = tk.Frame(root)
+        left.pack(side=tk.LEFT, padx=10, pady=10)
+
         self.canvas_size = 280
-        self.canvas = tk.Canvas(root, width=self.canvas_size, height=self.canvas_size, bg='black')
-        self.canvas.pack(pady=10)
-        
-        # Vinculando o evento de arrastar o mouse para desenhar
+        self.canvas = tk.Canvas(left, width=self.canvas_size, height=self.canvas_size, bg='black')
+        self.canvas.pack()
         self.canvas.bind("<B1-Motion>", self.draw)
+
+        # Vinculando o evento de arrastar o mouse para desenhar
+        buttons = tk.Frame(left)
+        buttons.pack(pady=10)
+
+        self.btn_predict = tk.Button(buttons, text="Prever Dígito", command=self.predict)
+        self.btn_predict.pack(side=tk.LEFT, padx=5)
+
+        self.btn_clear = tk.Button(buttons, text="Limpar", command=self.clear_canvas)
+        self.btn_clear.pack(side=tk.LEFT, padx=5)
 
         # 3. Imagem auxiliar do Pillow para guardar o desenho em alta resolução
         self.image = Image.new("L", (self.canvas_size, self.canvas_size), color=0)
         self.draw_tool = ImageDraw.Draw(self.image)
 
-        # 4. Botões de Ação
-        self.btn_predict = tk.Button(root, text="Prever Dígito", command=self.predict)
-        self.btn_predict.pack(side=tk.LEFT, padx=20, pady=10)
+        # 4. Coluna direita: preview 28x28 + lista de probabilidades
+        right = tk.Frame(root)
+        right.pack(side=tk.LEFT, padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-        self.btn_clear = tk.Button(root, text="Limpar", command=self.clear_canvas)
-        self.btn_clear.pack(side=tk.RIGHT, padx=20, pady=10)
+        self.preview_label = tk.Label(right, text="Prévia 28x28", font=("Arial", 11))
+        self.preview_label.pack(anchor="w")
 
-        # 5. Rótulo para exibir o resultado
-        self.label_result = tk.Label(root, text="Desenhe um número acima", font=("Arial", 14))
-        self.label_result.pack(pady=10)
+        self.label_result = tk.Label(right, text="Desenhe um número acima", font=("Arial", 13))
+        self.label_result.pack(anchor="w", pady=(8, 4))
+
+        rows = tk.Frame(right)
+        rows.pack(anchor="w")
+        self.digit_labels = []
+        self.bar_canvases = []
+        self.bar_rects = []
+        for d in range(10):
+            row = tk.Frame(rows)
+            row.pack(anchor="w")
+            lbl = tk.Label(row, text=str(d), width=2, font=("Arial", 12, "bold"))
+            lbl.pack(side=tk.LEFT)
+            canvas = tk.Canvas(row, width=BAR_WIDTH, height=BAR_HEIGHT,
+                               bg='#3a3a3a', highlightthickness=0)
+            canvas.pack(side=tk.LEFT, padx=6)
+            rect = canvas.create_rectangle(0, 0, 0, BAR_HEIGHT, fill='#7f8c8d', width=0)
+            self.digit_labels.append(lbl)
+            self.bar_canvases.append(canvas)
+            self.bar_rects.append(rect)
 
     def draw(self, event):
         # Desenha um círculo branco onde o mouse passa
@@ -52,25 +85,53 @@ class DigitRecognizerApp:
         self.image = Image.new("L", (self.canvas_size, self.canvas_size), color=0)
         self.draw_tool = ImageDraw.Draw(self.image)
         self.label_result.config(text="Desenhe um número acima")
+        self.preview_label.config(image=None, text="Prévia 28x28")
+        self.photo = None
+        self._reset_bars()
+
+    def _reset_bars(self):
+        for i in range(10):
+            self.digit_labels[i].config(fg='black')
+            self.bar_canvases[i].coords(self.bar_rects[i], 0, 0, 0, BAR_HEIGHT)
+            self.bar_canvases[i].itemconfig(self.bar_rects[i], fill='#7f8c8d')
 
     def predict(self):
         # Redimensiona para 28x28 pixels para corresponder ao MNIST
         img_resized = self.image.resize((28, 28), Image.Resampling.LANCZOS)
-        
+
+        # Preview ampliado com vizinhança mais próxima para ver os pixels reais
+        preview = img_resized.resize((28 * PREVIEW_SCALE, 28 * PREVIEW_SCALE),
+                                     Image.Resampling.NEAREST)
+        self.photo = ImageTk.PhotoImage(preview)
+        self.preview_label.config(image=self.photo, text="")
+
         # Transforma em tensor e normaliza
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,))
         ])
-        
+
         tensor_image = transform(img_resized).unsqueeze(0)
 
-        # Faz a predição com o modelo
+        # Faz a predição com o modelo e converte os logits em probabilidades
         with torch.no_grad():
             output = self.model(tensor_image)
-            _, predicted = torch.max(output, 1)
+            probs = torch.softmax(output, dim=1)[0]
+            predicted = probs.argmax().item()
 
-        self.label_result.config(text=f"Previsão da Rede: {predicted.item()}")
+        best = predicted
+        for d in range(10):
+            p = probs[d].item()
+            self.bar_canvases[d].coords(self.bar_rects[d], 0, 0, max(1, round(p * BAR_WIDTH)), BAR_HEIGHT)
+            if d == best:
+                self.bar_canvases[d].itemconfig(self.bar_rects[d], fill='#2ecc71')
+                self.digit_labels[d].config(fg='#2ecc71')
+            else:
+                self.bar_canvases[d].itemconfig(self.bar_rects[d], fill='#7f8c8d')
+                self.digit_labels[d].config(fg='black')
+
+        self.label_result.config(text=f"Previsão da Rede: {predicted}")
+
 
 if __name__ == "__main__":
     root = tk.Tk()
