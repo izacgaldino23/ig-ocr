@@ -1,5 +1,4 @@
 import torch
-import argparse
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from model import SimpleNeuralNetwork
@@ -29,11 +28,11 @@ correct = 0
 total = 0
 
 with torch.no_grad():
-    for image, labels in test_loader:
+    for image, label in test_loader:
         outputs = model(image)
         _, predicted = torch.max(outputs, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
+        total += label.size(0)
+        correct += (predicted == label).sum().item()
         
 acurracy = correct / total
 print(f"Acurácia da rede de imagens de testes: {acurracy:.4f}")

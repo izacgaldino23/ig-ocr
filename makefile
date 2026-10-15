@@ -8,5 +8,8 @@ train:
 test:
 	${PYTHON} test.py ${ARGS}
 
+visualize:
+	${PYTHON} visualize.py ${ARGS}
+
 %:
 	@:
