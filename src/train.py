@@ -1,9 +1,9 @@
 import torch
-import os
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from model import SimpleNeuralNetwork
-from args import get_args
+from .args import get_args
+from .model import SimpleNeuralNetwork
+from .paths import DATA_DIR, checkpoint_path
 
 args = get_args()
 
@@ -17,7 +17,7 @@ transform = transforms.Compose([
 print("1. transformers carregados com sucesso!")
 
 # 2. Baixar e carregar o conjunto de dados
-train_dataset = datasets.MNIST('./data', train=True, transform=transform)
+train_dataset = datasets.MNIST(DATA_DIR, train=True, transform=transform)
 print("2. dataset carregado com sucesso!")
 
 # 3. Criar o dataloader para separar os dados em lotes
@@ -26,10 +26,10 @@ print(f"3. {len(train_loader)} lotes carregados com sucesso!")
 
 # 4. Criar a rede
 model = SimpleNeuralNetwork(args.input)
-file = f'data/models/mnist-{args.input}.pth'
+file = checkpoint_path(args.input)
 print("4. Rede criada com sucesso!")
 
-if os.path.exists(file):
+if file.exists():
     model.load_state_dict(torch.load(file))
     print("5. Modelo carregado com sucesso!")
 else:
@@ -73,5 +73,6 @@ for epoch in range(epochs):
             
 print("7. Treinamento concluido!")
 
+file.parent.mkdir(parents=True, exist_ok=True)
 torch.save(model.state_dict(), file)
 print(f"8. Modelo salvo com sucesso como {file}!")

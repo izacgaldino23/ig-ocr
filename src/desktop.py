@@ -2,8 +2,9 @@ import tkinter as tk
 from PIL import Image, ImageDraw, ImageTk
 import torch
 from torchvision import transforms
-from model import SimpleNeuralNetwork
-from args import get_args
+from .args import get_args
+from .model import SimpleNeuralNetwork
+from .paths import checkpoint_path
 
 args = get_args()
 
@@ -19,7 +20,7 @@ class DigitRecognizerApp:
 
         # 1. Carregando o modelo treinado
         self.model = SimpleNeuralNetwork(args.input)
-        file = f'data/models/mnist-{args.input}.pth'
+        file = checkpoint_path(args.input)
         self.model.load_state_dict(torch.load(file))
         self.model.eval()
 

@@ -2,8 +2,9 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
-from model import SimpleNeuralNetwork
-from args import get_args
+from .args import get_args
+from .model import SimpleNeuralNetwork
+from .paths import DATA_DIR, checkpoint_path
 
 args = get_args()
 
@@ -16,11 +17,11 @@ transform = transforms.Compose([
 ])
 
 # 2. Baixar e carregar o conjunto de dados
-test_dataset = datasets.MNIST('./data', train=False, transform=transform)
+test_dataset = datasets.MNIST(DATA_DIR, train=False, transform=transform)
 
 # 3. modelo
 model = SimpleNeuralNetwork(args.input)
-file = f'data/models/mnist-{args.input}.pth'
+file = checkpoint_path(args.input)
 model.load_state_dict(torch.load(file))
 
 # desligando o calculo de gradientes
