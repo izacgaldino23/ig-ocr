@@ -8,8 +8,10 @@ args = get_args()
 
 # 1. Transformação para converter as imagens em tensores e normaliza-las
 transform = transforms.Compose([
+    transforms.RandomAffine(15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
     transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
+    transforms.Normalize((0.1307,), (0.3081,)),
+    transforms.RandomErasing(p=0.1, value='random'),
 ])
 
 # 2. Baixar e carregar o conjunto de dados
