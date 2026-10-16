@@ -1,7 +1,8 @@
+import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-import matplotlib.pyplot as plt
+
 from .args import get_args
 from .model import SimpleNeuralNetwork
 from .paths import DATA_DIR, checkpoint_path
@@ -9,12 +10,14 @@ from .paths import DATA_DIR, checkpoint_path
 args = get_args()
 
 # 1. Transformação para converter as imagens em tensores e normaliza-las
-transform = transforms.Compose([
-    transforms.RandomAffine(15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,)),
-    transforms.RandomErasing(p=0.1, value='random'),
-])
+transform = transforms.Compose(
+    [
+        transforms.RandomAffine(15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,)),
+        transforms.RandomErasing(p=0.1, value="random"),
+    ]
+)
 
 # 2. Baixar e carregar o conjunto de dados
 test_dataset = datasets.MNIST(DATA_DIR, train=False, transform=transform)
@@ -38,21 +41,21 @@ with torch.no_grad():
         # Adiciona uma dimensão extra para o lote (batch) já que a rede espera [batch_size, canais, altura, largura]
         output = model(image.unsqueeze(0))
         _, predicted = torch.max(output, 1)
-        
+
         if predicted.item() != label:
             # Prepara a imagem para exibição (removendo a normalização e convertendo para numpy)
             img_display = image.squeeze(0) * 0.3081 + 0.1307
-            
-            axes[wrong].imshow(img_display, cmap='gray')
+
+            axes[wrong].imshow(img_display, cmap="gray")
             axes[wrong].set_title(f"Real: {label}\nPred: {predicted.item()}")
             print(f"Real: {label}\tPred: {predicted.item()}\tIndex: {i}")
-            axes[wrong].axis('off')
-            
+            axes[wrong].axis("off")
+
             wrong += 1
 
         if wrong == 5 or i == len(test_dataset) - 1:
             break
         i += 1
-        
+
 plt.tight_layout()
 plt.show()

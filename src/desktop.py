@@ -1,7 +1,9 @@
 import tkinter as tk
-from PIL import Image, ImageDraw, ImageTk
+
 import torch
+from PIL import Image, ImageDraw, ImageTk
 from torchvision import transforms
+
 from .args import get_args
 from .model import SimpleNeuralNetwork
 from .paths import checkpoint_path
@@ -29,7 +31,9 @@ class DigitRecognizerApp:
         left.pack(side=tk.LEFT, padx=10, pady=10)
 
         self.canvas_size = 280
-        self.canvas = tk.Canvas(left, width=self.canvas_size, height=self.canvas_size, bg='black')
+        self.canvas = tk.Canvas(
+            left, width=self.canvas_size, height=self.canvas_size, bg="black"
+        )
         self.canvas.pack()
         self.canvas.bind("<B1-Motion>", self.draw)
 
@@ -37,7 +41,9 @@ class DigitRecognizerApp:
         buttons = tk.Frame(left)
         buttons.pack(pady=10)
 
-        self.btn_predict = tk.Button(buttons, text="Prever Dígito", command=self.predict)
+        self.btn_predict = tk.Button(
+            buttons, text="Prever Dígito", command=self.predict
+        )
         self.btn_predict.pack(side=tk.LEFT, padx=5)
 
         self.btn_clear = tk.Button(buttons, text="Limpar", command=self.clear_canvas)
@@ -54,7 +60,9 @@ class DigitRecognizerApp:
         self.preview_label = tk.Label(right, text="Prévia 28x28", font=("Arial", 11))
         self.preview_label.pack(anchor="w")
 
-        self.label_result = tk.Label(right, text="Desenhe um número acima", font=("Arial", 13))
+        self.label_result = tk.Label(
+            right, text="Desenhe um número acima", font=("Arial", 13)
+        )
         self.label_result.pack(anchor="w", pady=(8, 4))
 
         rows = tk.Frame(right)
@@ -67,10 +75,15 @@ class DigitRecognizerApp:
             row.pack(anchor="w")
             lbl = tk.Label(row, text=str(d), width=2, font=("Arial", 12, "bold"))
             lbl.pack(side=tk.LEFT)
-            canvas = tk.Canvas(row, width=BAR_WIDTH, height=BAR_HEIGHT,
-                               bg='#3a3a3a', highlightthickness=0)
+            canvas = tk.Canvas(
+                row,
+                width=BAR_WIDTH,
+                height=BAR_HEIGHT,
+                bg="#3a3a3a",
+                highlightthickness=0,
+            )
             canvas.pack(side=tk.LEFT, padx=6)
-            rect = canvas.create_rectangle(0, 0, 0, BAR_HEIGHT, fill='#7f8c8d', width=0)
+            rect = canvas.create_rectangle(0, 0, 0, BAR_HEIGHT, fill="#7f8c8d", width=0)
             self.digit_labels.append(lbl)
             self.bar_canvases.append(canvas)
             self.bar_rects.append(rect)
@@ -79,7 +92,9 @@ class DigitRecognizerApp:
         # Desenha um círculo branco onde o mouse passa
         r = 8
         x, y = event.x, event.y
-        self.canvas.create_oval(x - r, y - r, x + r, y + r, fill='white', outline='white')
+        self.canvas.create_oval(
+            x - r, y - r, x + r, y + r, fill="white", outline="white"
+        )
         self.draw_tool.ellipse([x - r, y - r, x + r, y + r], fill=255)
 
     def clear_canvas(self):
@@ -93,25 +108,25 @@ class DigitRecognizerApp:
 
     def _reset_bars(self):
         for i in range(10):
-            self.digit_labels[i].config(fg='black')
+            self.digit_labels[i].config(fg="black")
             self.bar_canvases[i].coords(self.bar_rects[i], 0, 0, 0, BAR_HEIGHT)
-            self.bar_canvases[i].itemconfig(self.bar_rects[i], fill='#7f8c8d')
+            self.bar_canvases[i].itemconfig(self.bar_rects[i], fill="#7f8c8d")
 
     def predict(self):
         # Redimensiona para 28x28 pixels para corresponder ao MNIST
         img_resized = self.image.resize((28, 28), Image.Resampling.LANCZOS)
 
         # Preview ampliado com vizinhança mais próxima para ver os pixels reais
-        preview = img_resized.resize((28 * PREVIEW_SCALE, 28 * PREVIEW_SCALE),
-                                     Image.Resampling.NEAREST)
+        preview = img_resized.resize(
+            (28 * PREVIEW_SCALE, 28 * PREVIEW_SCALE), Image.Resampling.NEAREST
+        )
         self.photo = ImageTk.PhotoImage(preview)
         self.preview_label.config(image=self.photo, text="")
 
         # Transforma em tensor e normaliza
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))
-        ])
+        transform = transforms.Compose(
+            [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+        )
 
         tensor_image = transform(img_resized).unsqueeze(0)
 
@@ -124,13 +139,15 @@ class DigitRecognizerApp:
         best = predicted
         for d in range(10):
             p = probs[d].item()
-            self.bar_canvases[d].coords(self.bar_rects[d], 0, 0, max(1, round(p * BAR_WIDTH)), BAR_HEIGHT)
+            self.bar_canvases[d].coords(
+                self.bar_rects[d], 0, 0, max(1, round(p * BAR_WIDTH)), BAR_HEIGHT
+            )
             if d == best:
-                self.bar_canvases[d].itemconfig(self.bar_rects[d], fill='#2ecc71')
-                self.digit_labels[d].config(fg='#2ecc71')
+                self.bar_canvases[d].itemconfig(self.bar_rects[d], fill="#2ecc71")
+                self.digit_labels[d].config(fg="#2ecc71")
             else:
-                self.bar_canvases[d].itemconfig(self.bar_rects[d], fill='#7f8c8d')
-                self.digit_labels[d].config(fg='black')
+                self.bar_canvases[d].itemconfig(self.bar_rects[d], fill="#7f8c8d")
+                self.digit_labels[d].config(fg="black")
 
         self.label_result.config(text=f"Previsão da Rede: {predicted}")
 

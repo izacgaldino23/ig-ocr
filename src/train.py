@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
+
 from .args import get_args
 from .model import SimpleNeuralNetwork
 from .paths import DATA_DIR, checkpoint_path
@@ -8,12 +9,14 @@ from .paths import DATA_DIR, checkpoint_path
 args = get_args()
 
 # 1. Transformação para converter as imagens em tensores e normaliza-las
-transform = transforms.Compose([
-    transforms.RandomAffine(15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,)),
-    transforms.RandomErasing(p=0.1, value='random'),
-])
+transform = transforms.Compose(
+    [
+        transforms.RandomAffine(15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,)),
+        transforms.RandomErasing(p=0.1, value="random"),
+    ]
+)
 print("1. transformers carregados com sucesso!")
 
 # 2. Baixar e carregar o conjunto de dados
@@ -46,31 +49,35 @@ correct = 0
 for epoch in range(epochs):
     running_loss = 0.0
     for batch_idx, (image, labels) in enumerate(train_loader, 0):
-        
         # zerar os gradientes
         optimizer.zero_grad()
-        
+
         # previsao da rede
         outputs = model(image)
-        
+
         # calculo de erro
         loss = loss_fn(outputs, labels)
-        
+
         # retropropagação
         loss.backward()
-        
+
         # atualiza os pesos
         optimizer.step()
 
         running_loss += loss.item()
-        if batch_idx % 200 == 199 or batch_idx == len(train_loader)-1: # Imprime a cada 200 lotes e no final
+        if (
+            batch_idx % 200 == 199 or batch_idx == len(train_loader) - 1
+        ):  # Imprime a cada 200 lotes e no final
             total += labels.size(0)
             _, predicted = torch.max(outputs.data, 1)
             correct += (predicted == labels).sum().item()
-            print(f"\t=> Época [{epoch+1}/{epochs}], Lote [{batch_idx+1}/{len(train_loader)}], Perda: {running_loss / 200:.4f}", end=' ')
-            print(f"\r\t=Acurácia: {correct / total:.4f}", end='')
+            print(
+                f"\t=> Época [{epoch + 1}/{epochs}], Lote [{batch_idx + 1}/{len(train_loader)}], Perda: {running_loss / 200:.4f}",
+                end=" ",
+            )
+            print(f"\r\t=Acurácia: {correct / total:.4f}", end="")
             running_loss = 0.0
-            
+
 print("7. Treinamento concluido!")
 
 file.parent.mkdir(parents=True, exist_ok=True)
