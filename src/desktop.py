@@ -114,11 +114,11 @@ class DigitRecognizerApp:
             self.bar_canvases[i].itemconfig(self.bar_rects[i], fill="#7f8c8d")
 
     def predict(self):
-        # Redimensiona para 28x28 pixels para corresponder ao MNIST
-        img_resized = self.image.resize((28, 28), Image.Resampling.LANCZOS)
+        # Recorta e centraliza o dígito antes de adequá-lo ao formato do MNIST
+        img_processed = self.preprocess_and_center(self.image)
 
         # Preview ampliado com vizinhança mais próxima para ver os pixels reais
-        preview = img_resized.resize(
+        preview = img_processed.resize(
             (28 * PREVIEW_SCALE, 28 * PREVIEW_SCALE), Image.Resampling.NEAREST
         )
         self.photo = ImageTk.PhotoImage(preview)
@@ -129,7 +129,7 @@ class DigitRecognizerApp:
             [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
         )
 
-        tensor_image = transform(img_resized).unsqueeze(0)
+        tensor_image = transform(img_processed).unsqueeze(0)
 
         # Faz a predição com o modelo e converte os logits em probabilidades
         with torch.no_grad():
@@ -151,6 +151,37 @@ class DigitRecognizerApp:
                 self.digit_labels[d].config(fg="black")
 
         self.label_result.config(text=f"Previsão da Rede: {predicted}")
+
+    def preprocess_and_center(self, image_pil):
+        # 1. Encontra a caixa delimitadora (bounding box) dos pixels desenhados
+        bbox = image_pil.getbbox()
+        
+        # Se a tela estiver toda preta (nada desenhado), retorna a imagem vazia
+        if not bbox:
+            return image_pil.resize((28, 28))
+        
+        # Recorta a imagem para conter apenas o dígito
+        digit_crop = image_pil.crop(bbox)
+        
+        # 2. Mantém a proporção tornando a imagem recortada em um quadrado
+        w, h = digit_crop.size
+        max_side = max(w, h)
+        
+        # Cria uma nova tela preta quadrada com uma leve margem
+        square_img = Image.new("L", (max_side, max_side), color=0)
+        
+        # Cola o recorte exatamente no centro do quadrado
+        offset = ((max_side - w) // 2, (max_side - h) // 2)
+        square_img.paste(digit_crop, offset)
+        
+        # 3. Redimensiona o dígito mantendo margens para o padrão MNIST (20x20 dentro de 28x28)
+        digit_20x20 = square_img.resize((20, 20), Image.Resampling.LANCZOS)
+        
+        # 4. Cria a imagem final 28x28 e cola o dígito de 20x20 no centro (margem de 4 pixels)
+        final_28x28 = Image.new("L", (28, 28), color=0)
+        final_28x28.paste(digit_20x20, (4, 4))
+        
+        return final_28x28
 
 
 if __name__ == "__main__":
