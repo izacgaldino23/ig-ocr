@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw, ImageTk
 from torchvision import transforms
 
 from .args import get_args
-from .model import SimpleNeuralNetwork
+from .model import SimpleCNN
 from .paths import checkpoint_path
 
 args = get_args()
@@ -21,7 +21,8 @@ class DigitRecognizerApp:
         self.root.title("Reconhecedor de Dígitos MNIST")
 
         # 1. Carregando o modelo treinado
-        self.model = SimpleNeuralNetwork(args.input)
+        # self.model = SimpleNeuralNetwork(args.input)
+        self.model = SimpleCNN()
         file = checkpoint_path(args.input)
         self.model.load_state_dict(torch.load(file))
         self.model.eval()
