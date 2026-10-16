@@ -1,7 +1,11 @@
 from torch import nn
+import torch
+from torchvision.transforms import v2
 
 MODELS = [[28 * 28, 128, 64, 10]]
-
+# Valores de normalização do MNIST
+MEAN = 0.1307
+STD = 0.3081
 
 class SimpleNeuralNetwork(nn.Module):
     def __init__(self, model_idx=0):
@@ -79,3 +83,42 @@ class SimpleCNN(nn.Module):
         x = self.fc2(x)
 
         return x
+
+def custom_noise_erasing(img):
+    if torch.rand(1).item() > 0.1:  # Probabilidade p=0.1
+        return img
+
+    # Calcula parâmetros da região cortada
+    i, j, h, w, _ = v2.RandomErasing.get_params(
+        img, scale=(0.01, 0.2), ratio=(0.2, 2.2), value=[0]
+    )
+
+    # Valores normalizados para preto (0.0) e cinza médio (0.5)
+    val_black = (0.0 - MEAN) / STD  # ~ -0.424
+    val_gray = (0.5 - MEAN) / STD  # ~  1.200
+
+    # Gera ruído uniforme entre preto e cinza médio
+    noise = torch.empty(
+        (img.shape[0], h, w), dtype=img.dtype, device=img.device
+    ).uniform_(val_black, val_gray)
+
+    # Aplica o apagamento usando a API v2
+    return v2.functional.erase(img, i, j, h, w, noise)
+
+def get_transformers():
+    degrees = 10.0
+
+    # Transformação para converter as imagens em tensores e normaliza-las
+    # Adicionado também um random de posição, rotação e escala
+    # Além de um custom noise erasing
+    return v2.Compose(
+        [
+            v2.RandomAffine(
+                (-degrees, degrees), translate=(0.1, 0.1), scale=(0.8, 1.1)
+            ),
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize((MEAN,), (STD,)),
+            v2.Lambda(custom_noise_erasing),
+        ]
+    )

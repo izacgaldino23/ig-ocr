@@ -1,25 +1,18 @@
 import torch
 from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
+from torchvision import datasets
 
 from .args import get_args
-from .model import SimpleCNN
+from .model import SimpleCNN, get_transformers
 from .paths import DATA_DIR, checkpoint_path
 
 args = get_args()
 
 # 1. Transformação para converter as imagens em tensores e normaliza-las
-transform = transforms.Compose(
-    [
-        transforms.RandomAffine(10, translate=(0.1, 0.1), scale=(0.8, 1.1)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
-        transforms.RandomErasing(p=0.1, value="random"),
-    ]
-)
+transformers = get_transformers()
 
 # 2. Baixar e carregar o conjunto de dados
-test_dataset = datasets.MNIST(DATA_DIR, train=False, transform=transform)
+test_dataset = datasets.MNIST(DATA_DIR, train=False, transform=transformers)
 
 # 3. Criar o dataloader para separar os dados em lotes
 test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)

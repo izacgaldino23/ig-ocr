@@ -1,26 +1,19 @@
 import torch
 from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
+from torchvision import datasets
 
 from .args import get_args
-from .model import SimpleCNN
+from .model import SimpleCNN, get_transformers
 from .paths import DATA_DIR, checkpoint_path
 
 args = get_args()
 
 # 1. Transformação para converter as imagens em tensores e normaliza-las
-transform = transforms.Compose(
-    [
-        transforms.RandomAffine(10, translate=(0.1, 0.1), scale=(0.8, 1.1)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
-        transforms.RandomErasing(p=0.1, value="random"),
-    ]
-)
+transformers = get_transformers()
 print("1. transformers carregados com sucesso!")
 
 # 2. Baixar e carregar o conjunto de dados
-train_dataset = datasets.MNIST(DATA_DIR, train=True, transform=transform)
+train_dataset = datasets.MNIST(DATA_DIR, train=True, transform=transformers)
 print("2. dataset carregado com sucesso!")
 
 # 3. Criar o dataloader para separar os dados em lotes
@@ -47,8 +40,8 @@ epochs = 3
 print("6. Comecando o treinamento...")
 for epoch in range(epochs):
     running_loss = 0.0
-	total = 0
-	correct = 0
+    total = 0
+    correct = 0
     for batch_idx, (image, labels) in enumerate(train_loader, 0):
         # zerar os gradientes
         optimizer.zero_grad()
@@ -78,6 +71,9 @@ for epoch in range(epochs):
             running_loss = 0.0
 
 print("7. Treinamento concluido!")
+
+if args.output != 0:
+    file = checkpoint_path(args.output)
 
 file.parent.mkdir(parents=True, exist_ok=True)
 torch.save(model.state_dict(), file)
