@@ -1,11 +1,12 @@
-from torch import nn
 import torch
+from torch import nn
 from torchvision.transforms import v2
 
 MODELS = [[28 * 28, 128, 64, 10]]
 # Valores de normalização do MNIST
 MEAN = 0.1307
 STD = 0.3081
+
 
 class SimpleNeuralNetwork(nn.Module):
     def __init__(self, model_idx=0):
@@ -84,6 +85,7 @@ class SimpleCNN(nn.Module):
 
         return x
 
+
 def custom_noise_erasing(img):
     if torch.rand(1).item() > 0.1:  # Probabilidade p=0.1
         return img
@@ -104,6 +106,7 @@ def custom_noise_erasing(img):
 
     # Aplica o apagamento usando a API v2
     return v2.functional.erase(img, i, j, h, w, noise)
+
 
 def get_transformers():
     degrees = 10.0
