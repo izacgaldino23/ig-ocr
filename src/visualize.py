@@ -3,7 +3,7 @@ import torch
 from torchvision import datasets
 
 from .args import get_args
-from .model import SimpleCNN, get_transformers
+from .model import MEAN, STD, SimpleCNN, get_transformers
 from .paths import DATA_DIR, checkpoint_path
 
 args = get_args()
@@ -37,7 +37,7 @@ with torch.no_grad():
 
         if predicted.item() != label:
             # Prepara a imagem para exibição (removendo a normalização e convertendo para numpy)
-            img_display = image.squeeze(0) * std + mean
+            img_display = image.squeeze(0) * STD + MEAN
 
             axes[wrong].imshow(img_display, cmap="gray")
             axes[wrong].set_title(f"Real: {label}\nPred: {predicted.item()}")
