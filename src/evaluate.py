@@ -1,14 +1,16 @@
 import torch
 from torch.utils.data import DataLoader
 
-from .args import get_args
+from src.config import init_config
+
 from .model import SimpleCNN, get_emnist_dataset
 from .paths import checkpoint_path
 
-args = get_args()
+# 1. Configuração inicial
+args, device = init_config()
 
 # Baixar e carregar o conjunto de dados
-test_dataset = get_emnist_dataset(False, False)
+test_dataset = get_emnist_dataset(False)
 print("dataset carregado com sucesso!")
 
 # Criar o dataloader para separar os dados em lotes
@@ -18,7 +20,9 @@ test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
 # model = SimpleNeuralNetwork(args.input)
 model = SimpleCNN()
 file = checkpoint_path(args.input)
-model.load_state_dict(torch.load(file))
+content = torch.load(file)
+model.load_state_dict(content["model"])
+class_names = content["classes"]
 
 # desligando o calculo de gradientes
 model.eval()
@@ -28,16 +32,21 @@ total = 0
 number_map = {i: [0, 0] for i in range(10)}
 
 with torch.no_grad():
-    for image, label in test_loader:
-        outputs = model(image)
+    for images, labels in test_loader:
+        images = images.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
+        
+        outputs = model(images)
         _, predicted = torch.max(outputs, 1)
-        total += label.size(0)
-        correct += (predicted == label).sum().item()
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
 
-        for i in range(label.size(0)):
-            number_map[label[i].item()][0] += 1
-            if predicted[i].item() == label[i].item():
-                number_map[label[i].item()][1] += 1
+        for i in range(labels.size(0)):
+            label_val = labels[i].item()
+            number_map[label_val][0] += 1
+            predict_idx = int(predicted[i].item())
+            if class_names[predict_idx] == label_val:
+                number_map[label_val][1] += 1
 
 acurracy = correct / total
 print(f"Acurácia da rede de imagens de testes: {acurracy:.4f}")

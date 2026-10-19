@@ -115,7 +115,7 @@ def custom_noise_erasing(img):
 
 
 def fix_emnist_orientation(img):
-    return img.rotate(-90).transpose(Image.FLIP_LEFT_RIGHT)
+    return img.rotate(-90).transpose(Image.Transpose.FLIP_LEFT_RIGHT)
 
 
 def get_transformers():
@@ -138,7 +138,7 @@ def get_transformers():
     )
 
 
-def get_emnist_dataset(train: bool, download: bool):
+def get_emnist_dataset(train: bool, download: bool=False):
     return datasets.EMNIST(
         DATA_DIR,
         "balanced",

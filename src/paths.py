@@ -6,4 +6,4 @@ CHECKPOINT_DIR = PROJECT_ROOT / "artifacts" / "checkpoints"
 
 
 def checkpoint_path(model_number: float) -> Path:
-    return CHECKPOINT_DIR / f"mnist-{model_number}.pth"
+    return CHECKPOINT_DIR / f"emnist-{model_number}.pth"

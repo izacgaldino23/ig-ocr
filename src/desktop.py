@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw, ImageTk
 from torchvision import transforms
 
 from .args import get_args
-from .model import SimpleCNN
+from .model import MEAN, STD, SimpleCNN
 from .paths import checkpoint_path
 
 args = get_args()
@@ -24,7 +24,10 @@ class DigitRecognizerApp:
         # self.model = SimpleNeuralNetwork(args.input)
         self.model = SimpleCNN()
         file = checkpoint_path(args.input)
-        self.model.load_state_dict(torch.load(file))
+        content = torch.load(file)
+        self.model.load_state_dict(content["model"])
+        self.class_names = content["classes"]
+        
         self.model.eval()
 
         # 2. Coluna esquerda: área de desenho fixa
@@ -103,7 +106,7 @@ class DigitRecognizerApp:
         self.image = Image.new("L", (self.canvas_size, self.canvas_size), color=0)
         self.draw_tool = ImageDraw.Draw(self.image)
         self.label_result.config(text="Desenhe um número acima")
-        self.preview_label.config(image=None, text="Prévia 28x28")
+        self.preview_label.config(image="", text="Prévia 28x28")
         self.photo = None
         self._reset_bars()
 
@@ -125,11 +128,10 @@ class DigitRecognizerApp:
         self.preview_label.config(image=self.photo, text="")
 
         # Transforma em tensor e normaliza
-        transformers = transforms.Compose(
-            [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-        )
+        tensor_image = transforms.ToTensor()(img_processed)
+        tensor_image = transforms.Normalize((MEAN,), (STD,))(tensor_image)
+        tensor_image = tensor_image.unsqueeze(0)
 
-        tensor_image = transformers(img_processed).unsqueeze(0)
 
         # Faz a predição com o modelo e converte os logits em probabilidades
         with torch.no_grad():
@@ -137,7 +139,10 @@ class DigitRecognizerApp:
             probs = torch.softmax(output, dim=1)[0]
             predicted = probs.argmax().item()
 
-        best = predicted
+            predict_idx = int(predicted)
+            predicted_item = self.class_names[predict_idx]
+
+        best = predicted_item
         for d in range(10):
             p = probs[d].item()
             self.bar_canvases[d].coords(
@@ -150,7 +155,7 @@ class DigitRecognizerApp:
                 self.bar_canvases[d].itemconfig(self.bar_rects[d], fill="#7f8c8d")
                 self.digit_labels[d].config(fg="black")
 
-        self.label_result.config(text=f"Previsão da Rede: {predicted}")
+        self.label_result.config(text=f"Previsão da Rede: {predicted_item}")
 
     def preprocess_and_center(self, image_pil):
         # 1. Encontra a caixa delimitadora (bounding box) dos pixels desenhados

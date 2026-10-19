@@ -1,20 +1,24 @@
 import matplotlib.pyplot as plt
 import torch
 
-from .args import get_args
+from src.config import init_config
+
 from .model import MEAN, STD, SimpleCNN, get_emnist_dataset
 from .paths import checkpoint_path
 
-args = get_args()
+# 1. Configuração inicial
+args, device = init_config()
 
 # 2. Baixar e carregar o conjunto de dados
-test_dataset = get_emnist_dataset(False, False)
+test_dataset = get_emnist_dataset(False)
 
 # 3. modelo
 # model = SimpleNeuralNetwork(args.input)
 model = SimpleCNN()
 file = checkpoint_path(args.input)
-model.load_state_dict(torch.load(file))
+content = torch.load(file)
+model.load_state_dict(content["model"])
+class_names = content["classes"]
 
 # desligando o calculo de gradientes
 model.eval()
@@ -31,13 +35,16 @@ with torch.no_grad():
         output = model(image.unsqueeze(0))
         _, predicted = torch.max(output, 1)
 
-        if predicted.item() != label:
+        predict_idx = int(predicted[i].item())
+        predicted_item = class_names[predict_idx]
+
+        if predicted_item != label:
             # Prepara a imagem para exibição (removendo a normalização e convertendo para numpy)
             img_display = image.squeeze(0) * STD + MEAN
 
             axes[wrong].imshow(img_display, cmap="gray")
-            axes[wrong].set_title(f"Real: {label}\nPred: {predicted.item()}")
-            print(f"Real: {label}\t Pred: {predicted.item()}\t Index: {i}")
+            axes[wrong].set_title(f"Real: {label}\nPred: {predicted_item}")
+            print(f"Real: {label}\t Pred: {predicted_item}\t Index: {i}")
             axes[wrong].axis("off")
 
             wrong += 1
