@@ -1,3 +1,6 @@
+import time
+from datetime import datetime
+
 import torch
 from torch.utils.data import DataLoader
 
@@ -8,6 +11,8 @@ from .paths import checkpoint_path
 
 
 def main():
+    torch.backends.cudnn.benchmark = True
+
     # 1. Configuração inicial
     args, device = init_config()
 
@@ -20,7 +25,7 @@ def main():
     workers = 1
     if device.type == "cuda":
         batch_size = 256
-        workers = 2
+        workers = 4
 
     train_loader = DataLoader(
         train_dataset,
@@ -47,13 +52,18 @@ def main():
     model = model.to(device)
 
     loss_fn = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # Loop de treinamento
     epochs = 5
     print("6. Comecando o treinamento...")
+
+    start_total = time.perf_counter()
+
     for epoch in range(epochs):
+        epoch_start = time.perf_counter()
         running_loss = 0.0
+        batches_in_interval = 0
         total = 0
         correct = 0
         for batch_idx, (images, labels) in enumerate(train_loader, 0):
@@ -76,6 +86,7 @@ def main():
             optimizer.step()
 
             running_loss += float(loss.item())
+            batches_in_interval += 1
 
             # Acurácia
             total += labels.size(0)
@@ -83,18 +94,26 @@ def main():
             correct += (predicted == labels).sum().item()
 
             if batch_idx % 200 == 199 or batch_idx == len(train_loader) - 1:
-                avg_loss = running_loss / batch_idx
+                avg_loss = running_loss / batches_in_interval
                 accuracy = correct / total
                 print(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] "
                     f"\t=> Época [{epoch + 1}/{epochs}], "
                     f"Lote [{batch_idx + 1}/{len(train_loader)}], "
                     f"Perda: {avg_loss:.4f}, "
                     f"Acurácia: {accuracy * 100:.2f}%"
                 )
-                # Reseta o acumulador da perda para o próximo intervalo
+                # Reseta os dois contadores do intervalo
                 running_loss = 0.0
+                batches_in_interval = 0
 
-    print("7. Treinamento concluido!")
+        epoch_duration = time.perf_counter() - epoch_start
+        print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] -> Fim da Época {epoch + 1} em {epoch_duration:.2f}s"
+        )
+
+    total_duration = time.perf_counter() - start_total
+    print(f"7. Treinamento concluido em {total_duration:.2f}s!")
 
     if args.output != 0:
         file = checkpoint_path(args.output)
