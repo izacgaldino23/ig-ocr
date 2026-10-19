@@ -106,6 +106,8 @@ def main():
                 # Reseta os dois contadores do intervalo
                 running_loss = 0.0
                 batches_in_interval = 0
+                correct = 0
+                total = 0
 
         epoch_duration = time.perf_counter() - epoch_start
         print(
