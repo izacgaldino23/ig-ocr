@@ -4,11 +4,12 @@ import torch
 from PIL import Image, ImageDraw, ImageTk
 from torchvision import transforms
 
-from .args import get_args
+from src.config import init_config
+
 from .model import MEAN, STD, SimpleCNN
 from .paths import checkpoint_path
 
-args = get_args()
+args, device = init_config()
 
 BAR_WIDTH = 160
 BAR_HEIGHT = 14
@@ -27,7 +28,8 @@ class DigitRecognizerApp:
         content = torch.load(file)
         self.model.load_state_dict(content["model"])
         self.class_names = content["classes"]
-        
+        self.model = self.model.to(device)
+
         self.model.eval()
 
         # 2. Coluna esquerda: área de desenho fixa
@@ -132,7 +134,6 @@ class DigitRecognizerApp:
         tensor_image = transforms.Normalize((MEAN,), (STD,))(tensor_image)
         tensor_image = tensor_image.unsqueeze(0)
 
-
         # Faz a predição com o modelo e converte os logits em probabilidades
         with torch.no_grad():
             output = self.model(tensor_image)
@@ -160,32 +161,32 @@ class DigitRecognizerApp:
     def preprocess_and_center(self, image_pil):
         # 1. Encontra a caixa delimitadora (bounding box) dos pixels desenhados
         bbox = image_pil.getbbox()
-        
+
         # Se a tela estiver toda preta (nada desenhado), retorna a imagem vazia
         if not bbox:
             return image_pil.resize((28, 28))
-        
+
         # Recorta a imagem para conter apenas o dígito
         digit_crop = image_pil.crop(bbox)
-        
+
         # 2. Mantém a proporção tornando a imagem recortada em um quadrado
         w, h = digit_crop.size
         max_side = max(w, h)
-        
+
         # Cria uma nova tela preta quadrada com uma leve margem
         square_img = Image.new("L", (max_side, max_side), color=0)
-        
+
         # Cola o recorte exatamente no centro do quadrado
         offset = ((max_side - w) // 2, (max_side - h) // 2)
         square_img.paste(digit_crop, offset)
-        
+
         # 3. Redimensiona o dígito mantendo margens para o padrão MNIST (20x20 dentro de 28x28)
         digit_20x20 = square_img.resize((20, 20), Image.Resampling.LANCZOS)
-        
+
         # 4. Cria a imagem final 28x28 e cola o dígito de 20x20 no centro (margem de 4 pixels)
         final_28x28 = Image.new("L", (28, 28), color=0)
         final_28x28.paste(digit_20x20, (4, 4))
-        
+
         return final_28x28
 
 

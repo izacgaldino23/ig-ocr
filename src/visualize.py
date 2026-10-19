@@ -20,6 +20,8 @@ content = torch.load(file)
 model.load_state_dict(content["model"])
 class_names = content["classes"]
 
+model = model.to(device)
+
 # desligando o calculo de gradientes
 model.eval()
 
