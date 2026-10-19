@@ -1,23 +1,20 @@
 import torch
 from torch.utils.data import DataLoader
-from torchvision import datasets
 
 from .args import get_args
-from .model import SimpleCNN, get_transformers
-from .paths import DATA_DIR, checkpoint_path
+from .model import SimpleCNN, get_emnist_dataset
+from .paths import checkpoint_path
 
 args = get_args()
 
-# 1. Transformação para converter as imagens em tensores e normaliza-las
-transformers = get_transformers()
+# Baixar e carregar o conjunto de dados
+test_dataset = get_emnist_dataset(False, False)
+print("dataset carregado com sucesso!")
 
-# 2. Baixar e carregar o conjunto de dados
-test_dataset = datasets.MNIST(DATA_DIR, train=False, transform=transformers)
-
-# 3. Criar o dataloader para separar os dados em lotes
+# Criar o dataloader para separar os dados em lotes
 test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
 
-# 4. modelo
+# modelo
 # model = SimpleNeuralNetwork(args.input)
 model = SimpleCNN()
 file = checkpoint_path(args.input)

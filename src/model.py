@@ -1,11 +1,17 @@
 import torch
+from PIL import Image
 from torch import nn
+from torchvision import datasets
 from torchvision.transforms import v2
+
+from src.paths import DATA_DIR
 
 MODELS = [[28 * 28, 128, 64, 10]]
 # Valores de normalização do MNIST
 MEAN = 0.1307
 STD = 0.3081
+
+EMINIST_BALANCED_VALUES = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabdefghnqrt"
 
 
 class SimpleNeuralNetwork(nn.Module):
@@ -62,7 +68,7 @@ class SimpleCNN(nn.Module):
         self.flatten = nn.Flatten()
         self.fc1 = nn.Linear(32 * 7 * 7, 64)
         self.relu3 = nn.ReLU()
-        self.fc2 = nn.Linear(64, 10)
+        self.fc2 = nn.Linear(64, 47)
 
     def forward(self, x):
         # Bloco Convolucional 1
@@ -108,6 +114,10 @@ def custom_noise_erasing(img):
     return v2.functional.erase(img, i, j, h, w, noise)
 
 
+def fix_emnist_orientation(img):
+    return img.rotate(-90).transpose(Image.FLIP_LEFT_RIGHT)
+
+
 def get_transformers():
     degrees = 10.0
 
@@ -116,6 +126,7 @@ def get_transformers():
     # Além de um custom noise erasing
     return v2.Compose(
         [
+            v2.Lambda(fix_emnist_orientation),
             v2.RandomAffine(
                 (-degrees, degrees), translate=(0.1, 0.1), scale=(0.8, 1.1)
             ),
@@ -124,4 +135,14 @@ def get_transformers():
             v2.Normalize((MEAN,), (STD,)),
             v2.Lambda(custom_noise_erasing),
         ]
+    )
+
+
+def get_emnist_dataset(train: bool, download: bool):
+    return datasets.EMNIST(
+        DATA_DIR,
+        "balanced",
+        train=train,
+        download=download,
+        transform=get_transformers(),
     )

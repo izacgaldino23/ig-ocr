@@ -50,3 +50,17 @@ O MNIST será baixado para `data/raw/` quando necessário, e os checkpoints ser�
 #### Modelo 1.1
 
 Foi melhorado os transformers para ter algumas variações melhores usando um randomErasing personalizado.
+
+### Modelo 2
+
+Inicio da leitura do EMINIST (adicionar previsão de letras)
+
+- Entrada: 28 × 28
+- Camadas ocultas:
+	- Convolucionais (densas): 
+		- 1ª camada: 16 filtros de 3x3, ReLU e Pooling 2x2
+		- 2ª camada: 32 filtros de 3x3, ReLU e Pooling 2x2
+	- Linear:
+		- Flatten
+		- 64 neurônios com ReLU
+- Saída: 47 classes

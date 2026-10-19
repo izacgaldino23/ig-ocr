@@ -1,10 +1,9 @@
 import torch
 from torch.utils.data import DataLoader
-from torchvision import datasets
 
 from .args import get_args
-from .model import SimpleCNN, get_transformers
-from .paths import DATA_DIR, checkpoint_path
+from .model import SimpleCNN, get_emnist_dataset, get_transformers
+from .paths import checkpoint_path
 
 args = get_args()
 
@@ -13,7 +12,8 @@ transformers = get_transformers()
 print("1. transformers carregados com sucesso!")
 
 # 2. Baixar e carregar o conjunto de dados
-train_dataset = datasets.MNIST(DATA_DIR, train=True, transform=transformers)
+train_dataset = get_emnist_dataset(True, False)
+class_names = train_dataset.classes
 print("2. dataset carregado com sucesso!")
 
 # 3. Criar o dataloader para separar os dados em lotes
@@ -36,12 +36,13 @@ loss_fn = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
 # Loop de treinamento
-epochs = 3
+epochs = 5
 print("6. Comecando o treinamento...")
 for epoch in range(epochs):
     running_loss = 0.0
     total = 0
     correct = 0
+    batches_interval = 0
     for batch_idx, (image, labels) in enumerate(train_loader, 0):
         # zerar os gradientes
         optimizer.zero_grad()
@@ -58,17 +59,26 @@ for epoch in range(epochs):
         # atualiza os pesos
         optimizer.step()
 
-        running_loss += loss.item()
+        running_loss += float(loss.item())
+
+        # Acurácia
         total += labels.size(0)
         _, predicted = torch.max(outputs.data, 1)
+        predicted_idx = predicted[0].item()
         correct += (predicted == labels).sum().item()
-        if (
-            batch_idx % 200 == 199 or batch_idx == len(train_loader) - 1
-        ):  # Imprime a cada 200 lotes e no final
+
+        if (batch_idx % 200 == 199 or batch_idx == len(train_loader) - 1):
+            avg_loss = running_loss / batch_idx
+            accuracy = correct / total
             print(
-                f"\t=> Época [{epoch + 1}/{epochs}], Lote [{batch_idx + 1}/{len(train_loader)}], Perda: {running_loss / 200:.4f}, Acurácia: {correct / total:.4f}"
+                f"\t=> Época [{epoch + 1}/{epochs}], "
+                f"Lote [{batch_idx + 1}/{len(train_loader)}], "
+                f"Perda: {avg_loss:.4f}, "
+                f"Acurácia: {accuracy * 100:.2f}%"
             )
+            # Reseta o acumulador da perda para o próximo intervalo
             running_loss = 0.0
+            batches_in_interval = 0
 
 print("7. Treinamento concluido!")
 

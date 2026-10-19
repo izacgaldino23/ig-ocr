@@ -125,11 +125,11 @@ class DigitRecognizerApp:
         self.preview_label.config(image=self.photo, text="")
 
         # Transforma em tensor e normaliza
-        transform = transforms.Compose(
+        transformers = transforms.Compose(
             [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
         )
 
-        tensor_image = transform(img_processed).unsqueeze(0)
+        tensor_image = transformers(img_processed).unsqueeze(0)
 
         # Faz a predição com o modelo e converte os logits em probabilidades
         with torch.no_grad():

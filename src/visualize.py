@@ -1,18 +1,14 @@
 import matplotlib.pyplot as plt
 import torch
-from torchvision import datasets
 
 from .args import get_args
-from .model import MEAN, STD, SimpleCNN, get_transformers
-from .paths import DATA_DIR, checkpoint_path
+from .model import MEAN, STD, SimpleCNN, get_emnist_dataset
+from .paths import checkpoint_path
 
 args = get_args()
 
-# 1. Transformação para converter as imagens em tensores e normaliza-las
-transformers = get_transformers()
-
 # 2. Baixar e carregar o conjunto de dados
-test_dataset = datasets.MNIST(DATA_DIR, train=False, transform=transformers)
+test_dataset = get_emnist_dataset(False, False)
 
 # 3. modelo
 # model = SimpleNeuralNetwork(args.input)
