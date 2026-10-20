@@ -54,6 +54,8 @@ def main():
     loss_fn = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=1)
+
     # Loop de treinamento
     epochs = 5
     print("6. Comecando o treinamento...")
@@ -70,9 +72,6 @@ def main():
             images = images.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
 
-            # zerar os gradientes
-            optimizer.zero_grad()
-
             # previsao da rede
             outputs = model(images)
 
@@ -82,8 +81,9 @@ def main():
             # retropropagação
             loss.backward()
 
-            # atualiza os pesos
+            # atualiza os pesos e zera os gradientes
             optimizer.step()
+            optimizer.zero_grad()
 
             running_loss += float(loss.item())
             batches_in_interval += 1

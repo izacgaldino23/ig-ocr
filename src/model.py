@@ -48,40 +48,61 @@ class SimpleCNN(nn.Module):
     def __init__(self):
         super().__init__()
 
-        # 1. Primeira camada convolucional + pooling
-        # Entra [1, 28, 28] e sai [32, 28, 28]
+        # Bloco 1
+        # 1. Primeira camada convolucional
         self.conv1 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
-        self.relu1 = nn.ReLU()
-        # reduz pela metade [32, 28, 28] -> [32, 14, 14]
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.relu1 = nn.ReLU()  # 32x28x28
 
-        # 2. Segunda camada convolucional + pooling
-        # Entra [32, 14, 14] e sai [64, 14, 14]
+        # 2. Segunda camada convolucional
         self.conv2 = nn.Conv2d(
             in_channels=32, out_channels=64, kernel_size=3, padding=1
         )
+        
         self.bn2 = nn.BatchNorm2d(64)
-        self.relu2 = nn.ReLU()
-        # reduz pela metade [64, 14, 14] -> [64, 7, 7]
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.relu2 = nn.ReLU()  # 64x28x28
+
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)  # 64x14x14
+        self.drop1 = nn.Dropout2d(0.25)
+
+        # Bloco 2
+        # Terceira convulacional
+        self.conv3 = nn.Conv2d(64, 128, 3, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.relu3 = nn.ReLU()  # 128x14x14
+
+        # Quarta convulacional
+        self.conv4 = nn.Conv2d(128, 128, 3, padding=1)
+        self.bn4 = nn.BatchNorm2d(128)
+        self.relu4 = nn.ReLU()  # 128x14x14
+
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)  # 128x7x7
+        self.drop2 = nn.Dropout2d(0.25)
+
+        # Bloco 3
+        self.flatten = nn.Flatten()  # 6272
 
         # 3. Camadas completamente conectadas (Dense / Linear)
-        self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(64 * 7 * 7, 128)
-        self.relu3 = nn.ReLU()
-        self.dropout = nn.Dropout(0.3)
-        self.fc2 = nn.Linear(128, 47)
+        self.fc1 = nn.Linear(128 * 7 * 7, 512)
+        self.fc1_bn = nn.BatchNorm1d(512)
+        self.fc1_relu = nn.ReLU()
+        self.fc1_drop = nn.Dropout(0.5)
+
+        self.fc2 = nn.Linear(512, 47)
 
     def forward(self, x):
-        x = self.pool1(self.relu1(self.bn1(self.conv1(x))))
-        x = self.pool2(self.relu2(self.bn2(self.conv2(x))))
+        # Bloco 1
+        x = self.relu1(self.bn1(self.conv1(x)))
+        x = self.drop1(self.pool1(self.relu2(self.bn2(self.conv2(x)))))
+
+        # Bloco 2
+        x = self.relu3(self.bn3(self.conv3(x)))
+        x = self.drop2(self.pool2(self.relu4(self.bn4(self.conv4(x)))))
 
         # Classificação Final
         x = self.flatten(x)
         x = self.fc1(x)
-        x = self.relu3(x)
-        x = self.dropout(x)
+        x = self.fc1_drop(self.fc1_relu(self.fc1_bn(x)))
         x = self.fc2(x)
 
         return x
@@ -133,7 +154,7 @@ def get_transformers():
     )
 
 
-def get_emnist_dataset(train: bool, download: bool=False):
+def get_emnist_dataset(train: bool, download: bool = False):
     return datasets.EMNIST(
         DATA_DIR,
         "balanced",
