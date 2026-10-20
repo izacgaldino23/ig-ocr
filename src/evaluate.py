@@ -52,7 +52,9 @@ with torch.no_grad():
 acurracy = correct / total
 print(f"Acurácia da rede de imagens de testes: {acurracy * 100:.2f}%")
 
-for i in number_map:
+classes = dict(sorted(number_map.items(), key=lambda kv: kv[1][1], reverse=True))
+
+for i in classes:
     print(
-        f"{class_names[i]}: {number_map[i][1] / number_map[i][0]:.4f}. [{number_map[i][1]} de {number_map[i][0]}]"
+        f"{class_names[i]}: {classes[i][1] / classes[i][0]:.4f}. [{classes[i][1]} de {classes[i][0]}]"
     )
