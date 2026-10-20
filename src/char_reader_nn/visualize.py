@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import torch
 
-from src.config import init_config
+from src.char_reader_nn.config import init_config
 
 from .model import MEAN, STD, SimpleCNN, get_emnist_dataset
 from .paths import checkpoint_path

@@ -4,7 +4,7 @@ from datetime import datetime
 import torch
 from torch.utils.data import DataLoader
 
-from src.config import init_config
+from src.char_reader_nn.config import init_config
 
 from .model import SimpleCNN, get_emnist_dataset
 from .paths import checkpoint_path

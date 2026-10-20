@@ -4,7 +4,7 @@ import torch
 from PIL import Image, ImageDraw, ImageTk
 from torchvision import transforms
 
-from src.config import init_config
+from src.char_reader_nn.config import init_config
 
 from .model import MEAN, STD, SimpleCNN
 from .paths import checkpoint_path

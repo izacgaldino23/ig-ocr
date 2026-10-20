@@ -4,7 +4,7 @@ from torch import nn
 from torchvision import datasets
 from torchvision.transforms import v2
 
-from src.paths import DATA_DIR
+from src.char_reader_nn.paths import DATA_DIR
 
 MODELS = [[28 * 28, 128, 64, 10]]
 # Valores de normalização do MNIST

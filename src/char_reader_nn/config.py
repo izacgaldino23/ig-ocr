@@ -1,6 +1,6 @@
 import torch
 
-from src.args import get_args
+from src.char_reader_nn.args import get_args
 
 
 def init_config(force_cpu=False):
