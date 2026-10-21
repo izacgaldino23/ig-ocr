@@ -64,7 +64,7 @@ def generate_test_image(text: str):
             # save the char bounding box on clue
             clue.append(
                 {
-                    "caractere": char,
+                    "char": char,
                     "bbox": [left, top, w, h],  # [x, y, largura, altura]
                 }
             )
@@ -91,4 +91,4 @@ def generate_test_image(text: str):
 # # Exemplo de teste com duas linhas e espaço
 # gerar_imagem_teste("A1 B2\ni 7")
 if __name__ == "__main__":
-    generate_test_image("Esse é um teste, bem massa")
+    generate_test_image("Esse é um teste bem massa")
