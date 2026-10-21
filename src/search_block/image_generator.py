@@ -27,7 +27,6 @@ def generate_test_image(text: str):
 
     clue = []
 
-    
     curr_x, curr_y = (
         random.randint(margin, int(width / 2)),
         random.randint(margin, int(height / 2)),
@@ -35,32 +34,33 @@ def generate_test_image(text: str):
     initial_x = curr_x
 
     words = text.split(r" ")
-    
 
     for word in words:
         left, top, right, bottom = draw.textbbox((curr_x, curr_y), word, font=font)
         if right >= right_limit:
             curr_x = initial_x
             curr_y += 60
-        
+
         for char in word:
             if char == "\n":  # new line
                 curr_x = initial_x
                 curr_y += 60
                 continue
-    
-            if curr_x + 20 >= right_limit:  # brake line to prevent writing letters out of the image
+
+            if (
+                curr_x + 20 >= right_limit
+            ):  # brake line to prevent writing letters out of the image
                 curr_x = initial_x
                 curr_y += 60
-    
+
             # get the bounding box for each characther
             bbox = draw.textbbox((curr_x, curr_y), char, font=font)
             left, top, right, bottom = bbox
             w, h = right - left, bottom - top
-    
+
             # Draw a white characther
             draw.text((curr_x, curr_y), char, fill=255, font=font)
-    
+
             # save the char bounding box on clue
             clue.append(
                 {
@@ -68,11 +68,11 @@ def generate_test_image(text: str):
                     "bbox": [left, top, w, h],  # [x, y, largura, altura]
                 }
             )
-    
+
             # Advance for the new letter possition
             curr_x += w + 2
 
-        if curr_x != initial_x: # space between words
+        if curr_x != initial_x:  # space between words
             curr_x += font_size - 2
         continue
 
@@ -83,9 +83,9 @@ def generate_test_image(text: str):
 
     image.save(image_file)
     with open(json_file, "w") as f:
-        json.dump({"texto_esperado": text, "caixas": clue}, f, indent=4)
+        json.dump({"expected": text, "box": clue}, f, indent=4)
 
-    print(f"✅ Imagem gerada: {image_file} | Gabarito salvo: {json_file}")
+    print(f"✅ Image: {image_file} | Clue: {json_file}")
 
 
 # # Exemplo de teste com duas linhas e espaço
