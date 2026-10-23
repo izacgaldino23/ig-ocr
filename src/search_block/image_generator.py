@@ -3,7 +3,7 @@ import random
 
 from PIL import Image, ImageDraw, ImageFont
 
-from src.char_reader_nn.paths import test_image_path
+from src.utils.paths import test_image_path
 
 
 def generate_test_image(text: str):

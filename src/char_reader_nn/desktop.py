@@ -5,9 +5,8 @@ from PIL import Image, ImageDraw, ImageTk
 from torchvision import transforms
 
 from src.char_reader_nn.config import init_config
-
-from .model import MEAN, STD, SimpleCNN
-from .paths import checkpoint_path
+from src.char_reader_nn.model import MEAN, STD, SimpleCNN
+from src.utils.paths import checkpoint_path
 
 args, device = init_config()
 

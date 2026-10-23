@@ -3,7 +3,7 @@ from typing import TypeAlias
 import cv2
 import numpy as np
 
-from src.char_reader_nn.paths import test_image_path
+from src.utils.paths import test_image_path
 
 Box: TypeAlias = list[int]
 Line: TypeAlias = list[Box]
@@ -48,7 +48,6 @@ def sort_boxes_by_line(boxes: list[Box], tollerance=25):
     lines: list[Line] = []
     curr_line: Line = [boxes[0]]
 
-    count = 0
     avg_y: int = curr_line[0][1]
     for b in boxes[1:]:
         if abs(b[1] - avg_y) < tollerance:  # check if both are in the same line
@@ -59,8 +58,6 @@ def sort_boxes_by_line(boxes: list[Box], tollerance=25):
             lines.append(sorted(curr_line, key=lambda item: item[0]))
             curr_line = [b]
             avg_y = b[1]
-
-        count += 1
 
     # print(f"looped over {count + 1} boxes")
     if curr_line:

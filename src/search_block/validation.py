@@ -4,9 +4,9 @@ import os
 import cv2
 from PIL import Image, ImageDraw
 
-from src.char_reader_nn.paths import TEST_IMAGE_DIR, test_image_path
 from src.search_block.analyzer import character_segmentation
 from src.search_block.image_generator import generate_test_image
+from src.utils.paths import TEST_IMAGE_DIR, test_image_path
 
 texts = [
     "i j",
