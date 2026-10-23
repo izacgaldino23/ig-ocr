@@ -19,7 +19,7 @@ def character_segmentation(image_name: str):
     _, tresh = cv2.threshold(img, 50, 255, cv2.THRESH_BINARY)
 
     # dilate to join closer white from the same character
-    kernel = np.ones((2, 2), np.uint8)
+    kernel = np.ones((5, 1), np.uint8)
     img_dilated = cv2.dilate(tresh, kernel, iterations=1)
 
     contours, _ = cv2.findContours(
@@ -29,14 +29,14 @@ def character_segmentation(image_name: str):
     raw_boxes: list[Box] = []
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
-        if w > 3 and h > 3:  # filter small noises
+        if w >= 3 or h >= 3:  # filter small noises
             bbox = [x, y, w, h]
             raw_boxes.append(bbox)
 
-    print(f"{len(raw_boxes)} raw boxes found")
+    # print(f"{len(raw_boxes)} raw boxes found")
     sorted_boxes = sort_boxes_by_line(raw_boxes)
 
-    return img, sorted_boxes
+    return img_dilated, sorted_boxes
 
 
 def sort_boxes_by_line(boxes: list[Box], tollerance=25):
@@ -62,11 +62,11 @@ def sort_boxes_by_line(boxes: list[Box], tollerance=25):
 
         count += 1
 
-    print(f"looped over {count + 1} boxes")
+    # print(f"looped over {count + 1} boxes")
     if curr_line:
         lines.append(sorted(curr_line, key=lambda item: item[0]))
 
-    print(f"{len(lines)} different lines found")
+    # print(f"{len(lines)} different lines found")
 
     # sorte lines by y
     lines = sorted(lines, key=lambda l: l[0][1])
@@ -74,7 +74,7 @@ def sort_boxes_by_line(boxes: list[Box], tollerance=25):
     # parse the boxes to a 1d list with all boxes in the correct order
     final_boxes = [box for line in lines for box in line]
 
-    print(f"There are {len(final_boxes)} final boxes")
+    # print(f"There are {len(final_boxes)} final boxes")
 
     return final_boxes
 

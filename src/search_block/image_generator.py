@@ -35,16 +35,20 @@ def generate_test_image(text: str):
 
     words = text.split(r" ")
 
+    spacing = 0
     for word in words:
-        left, top, right, bottom = draw.textbbox((curr_x, curr_y), word, font=font)
+        left, top, right, bottom = draw.textbbox(
+            (curr_x, curr_y), word, font=font, spacing=spacing
+        )
         if right >= right_limit:
             curr_x = initial_x
             curr_y += 60
 
         for char in word:
-            if char == "\n":  # new line
-                curr_x = initial_x
-                curr_y += 60
+            if char == "\n" or char == "":  # new line
+                if char == "\n":
+                    curr_x = initial_x
+                    curr_y += 60
                 continue
 
             if (
@@ -54,20 +58,21 @@ def generate_test_image(text: str):
                 curr_y += 60
 
             # get the bounding box for each characther
-            bbox = draw.textbbox((curr_x, curr_y), char, font=font)
+            bbox = draw.textbbox((curr_x, curr_y), char, font=font, spacing=spacing)
             left, top, right, bottom = bbox
             w, h = right - left, bottom - top
 
             # Draw a white characther
-            draw.text((curr_x, curr_y), char, fill=255, font=font)
+            draw.text((curr_x, curr_y), char, fill=255, font=font, spacing=spacing)
 
             # save the char bounding box on clue
-            clue.append(
-                {
-                    "char": char,
-                    "bbox": [left, top, w, h],  # [x, y, largura, altura]
-                }
-            )
+            if char != " ":
+                clue.append(
+                    {
+                        "char": char,
+                        "bbox": [left, top, w, h],  # [x, y, largura, altura]
+                    }
+                )
 
             # Advance for the new letter possition
             curr_x += w + 2
@@ -79,13 +84,14 @@ def generate_test_image(text: str):
     file_name = f"{random.randint(1000, 9999)}"
     image_file = test_image_path(f"{file_name}.png")
     json_file = test_image_path(f"{file_name}.json")
-    image_file.parent.mkdir(parents=True, exist_ok=True)
+    image_file.parent.mkdir(parents=True, exist_ok=True, mode=777)
 
     image.save(image_file)
     with open(json_file, "w") as f:
         json.dump({"expected": text, "box": clue}, f, indent=4)
 
-    print(f"✅ Image: {image_file} | Clue: {json_file}")
+    # print(f"✅ Image: {image_file} | Clue: {json_file}")
+    return file_name
 
 
 # # Exemplo de teste com duas linhas e espaço
