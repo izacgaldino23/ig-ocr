@@ -4,8 +4,8 @@ import torch
 from PIL import Image, ImageDraw, ImageTk
 from torchvision import transforms
 
-from src.char_reader_nn.config import init_config
-from src.char_reader_nn.model import MEAN, STD, SimpleCNN
+from src.neural_network.config import init_config
+from src.neural_network.model import MEAN, STD, SimpleCNN
 from src.utils.paths import checkpoint_path
 
 args, device = init_config()
