@@ -15,7 +15,7 @@ def character_segmentation(image_name: str):
     if img is None:
         raise FileNotFoundError(f"Invalid file {image_name}.png")
 
-    # simple binaryzation (for middle gray colors)
+    # simple binary convertion (for middle gray colors)
     _, tresh = cv2.threshold(img, 50, 255, cv2.THRESH_BINARY)
 
     # dilate to join closer white from the same character
@@ -36,10 +36,10 @@ def character_segmentation(image_name: str):
     # print(f"{len(raw_boxes)} raw boxes found")
     sorted_boxes = sort_boxes_by_line(raw_boxes)
 
-    return img_dilated, sorted_boxes
+    return img, sorted_boxes
 
 
-def sort_boxes_by_line(boxes: list[Box], tollerance=25):
+def sort_boxes_by_line(boxes: list[Box], tolerance=25) -> list[Line]:
     if not boxes:
         return []
 
@@ -50,7 +50,7 @@ def sort_boxes_by_line(boxes: list[Box], tollerance=25):
 
     avg_y: int = curr_line[0][1]
     for b in boxes[1:]:
-        if abs(b[1] - avg_y) < tollerance:  # check if both are in the same line
+        if abs(b[1] - avg_y) < tolerance:  # check if both are in the same line
             curr_line.append(b)
             avg_y = int((avg_y + b[1]) / 2)
         else:
@@ -65,15 +65,13 @@ def sort_boxes_by_line(boxes: list[Box], tollerance=25):
 
     # print(f"{len(lines)} different lines found")
 
-    # sorte lines by y
+    # sort lines by y
     lines = sorted(lines, key=lambda l: l[0][1])
 
     # parse the boxes to a 1d list with all boxes in the correct order
-    final_boxes = [box for line in lines for box in line]
+    # final_boxes = [box for line in lines for box in line]
 
-    # print(f"There are {len(final_boxes)} final boxes")
-
-    return final_boxes
+    return lines
 
 
 if __name__ == "__main__":

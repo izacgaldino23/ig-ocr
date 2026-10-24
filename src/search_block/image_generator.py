@@ -43,6 +43,10 @@ def generate_test_image(text: str):
         if right >= right_limit:
             curr_x = initial_x
             curr_y += 60
+            # re math the new coordinates:
+            left, top, right, bottom = draw.textbbox(
+                (curr_x, curr_y), word, font=font, spacing=spacing
+            )
 
         for char in word:
             if char == "\n" or char == "":  # new line
@@ -50,12 +54,6 @@ def generate_test_image(text: str):
                     curr_x = initial_x
                     curr_y += 60
                 continue
-
-            if (
-                curr_x + 20 >= right_limit
-            ):  # brake line to prevent writing letters out of the image
-                curr_x = initial_x
-                curr_y += 60
 
             # get the bounding box for each characther
             bbox = draw.textbbox((curr_x, curr_y), char, font=font, spacing=spacing)
@@ -94,7 +92,8 @@ def generate_test_image(text: str):
     return file_name
 
 
-# # Exemplo de teste com duas linhas e espaço
-# gerar_imagem_teste("A1 B2\ni 7")
 if __name__ == "__main__":
-    generate_test_image("Esse é um teste bem massa")
+    # Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since 1966, when designers at Letraset and James Mosley, the librarian at St Bride Printing Library in London, took a 1914 Cicero translation and scrambled it to make dummy text for Letraset's Body Type sheets. It has survived not only many decades, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised thanks to these sheets and more recently with desktop publishing software like Aldus PageMaker and Microsoft Word including versions of Lorem Ipsum.
+    generate_test_image(
+        "Lorem Ipsum is simply dummy text of the printing and typesetting industry"
+    )
