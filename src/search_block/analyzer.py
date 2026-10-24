@@ -1,12 +1,83 @@
-from typing import TypeAlias
-
 import cv2
 import numpy as np
 
 from src.utils.paths import test_image_path
 
-Box: TypeAlias = list[int]
-Line: TypeAlias = list[Box]
+
+class Box:
+    def __init__(self, x=0, y=0, w=0, h=0) -> None:
+        self.x = x
+        self.y = y
+        self.w = w
+        self.h = h
+
+    def is_zero(self):
+        return self.x + self.y + self.w + self.h == 0
+
+    def set_second_coord(self, x1, y1):
+        self.w = x1 - self.x
+        self.h = y1 - self.y
+
+    def get_values(self) -> tuple[int, int, int, int]:
+        return self.x, self.y, self.w, self.h
+
+    def get_second_coord(self):
+        return self.x + self.w, self.y + self.h
+
+    def get_value_by_idx(self, idx):
+        match idx:
+            case 0:
+                return self.x
+            case 1:
+                return self.y
+            case 2:
+                return self.w
+            case 3:
+                return self.h
+
+    def set_values(self, values: tuple[int, int, int, int]):
+        self.x, self.y, self.w, self.h = values
+
+
+class Line:
+    def __init__(self, boxes: list[Box] | None) -> None:
+        self.bbox = Box()
+        if boxes:
+            self.boxes = boxes
+            x, y, w, h = boxes[0].get_values()
+            self.bbox.set_values((x, y, w, h))
+        else:
+            self.boxes: list[Box] = []
+
+    def add_box(self, box: Box):
+        self.boxes.append(box)
+
+        if len(self.boxes) == 1:
+            x, y, w, h = box.get_values()
+            self.bbox.set_values((x, y, w, h))
+            return
+
+        self.bbox.x = min(self.bbox.x, box.x)
+        self.bbox.y = min(self.bbox.y, box.y)
+
+        x, y = self.bbox.get_second_coord()
+        x1, y1 = box.get_second_coord()
+
+        self.bbox.set_second_coord(max(x, x1), max(y, y1))
+
+    def get_box_by_index(self, idx):
+        return self.boxes[idx]
+
+    def sort_boxes(self, inverse=False):
+        self.boxes = sorted(self.boxes, key=lambda item: item.x)
+
+    def normalize_boxes_height(self):
+        for box in self.boxes:
+
+            _, y = self.bbox.get_second_coord()
+
+            box.y = min(self.bbox.y, box.y)
+            box.h = max(box.h, y - box.y)
 
 
 def character_segmentation(image_name: str):
@@ -30,48 +101,52 @@ def character_segmentation(image_name: str):
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
         if w >= 3 or h >= 3:  # filter small noises
-            bbox = [x, y, w, h]
+            bbox = Box(x, y, w, h)
             raw_boxes.append(bbox)
 
-    # print(f"{len(raw_boxes)} raw boxes found")
-    sorted_boxes = sort_boxes_by_line(raw_boxes)
+    sorted_boxes_by_line = sort_boxes_by_line(raw_boxes)
 
-    return img, sorted_boxes
+    return img, sorted_boxes_by_line
 
 
 def sort_boxes_by_line(boxes: list[Box], tolerance=25) -> list[Line]:
     if not boxes:
         return []
 
-    boxes = sorted(boxes, key=lambda b: b[1])
+    boxes = sorted(boxes, key=lambda b: b.y)
 
     lines: list[Line] = []
-    curr_line: Line = [boxes[0]]
+    curr_line = Line([boxes[0]])
 
-    avg_y: int = curr_line[0][1]
+    avg_y: int = curr_line.get_box_by_index(0).y
     for b in boxes[1:]:
-        if abs(b[1] - avg_y) < tolerance:  # check if both are in the same line
-            curr_line.append(b)
-            avg_y = int((avg_y + b[1]) / 2)
+        if abs(b.y - avg_y) < tolerance:  # check if both are in the same line
+            curr_line.add_box(b)
+            avg_y = int((avg_y + b.y) / 2)
         else:
             # add the line to lines_list, sorting them by x
-            lines.append(sorted(curr_line, key=lambda item: item[0]))
-            curr_line = [b]
-            avg_y = b[1]
+            curr_line.sort_boxes()
+            lines.append(curr_line)
+            curr_line = Line([b])
+            avg_y = b.y
 
-    # print(f"looped over {count + 1} boxes")
     if curr_line:
-        lines.append(sorted(curr_line, key=lambda item: item[0]))
-
-    # print(f"{len(lines)} different lines found")
+        curr_line.sort_boxes()
+        lines.append(curr_line)
 
     # sort lines by y
-    lines = sorted(lines, key=lambda l: l[0][1])
+    lines = sorted(lines, key=lambda l: l.get_box_by_index(0).y)
+    for line in lines:
+        line.normalize_boxes_height()
 
     # parse the boxes to a 1d list with all boxes in the correct order
     # final_boxes = [box for line in lines for box in line]
 
     return lines
+
+
+def normalize_boxes_by_line(lines: list[Line]):
+    pass
 
 
 if __name__ == "__main__":

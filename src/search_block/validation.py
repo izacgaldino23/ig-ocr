@@ -1,9 +1,6 @@
 import json
 import os
 
-import cv2
-from PIL import Image, ImageDraw
-
 from src.search_block.analyzer import character_segmentation
 from src.search_block.image_generator import generate_test_image
 from src.utils.paths import TEST_IMAGE_DIR, test_image_path
@@ -47,7 +44,7 @@ def main():
     tollerance = 25
     try:
         for f in file_names:
-            dilated_img, boxes = character_segmentation(f)
+            _, lines = character_segmentation(f)
 
             # get file real cordinates
             json_path = test_image_path(f"{f}.json")
@@ -59,55 +56,42 @@ def main():
 
                 boxes_clue: list = data["box"]
 
-                if len(boxes_clue) != len(boxes):
-                    print(
-                        f"image [{f}] has different number of boxes. JSON has [{len(boxes_clue)}]. Predict has [{len(boxes)}]"
-                    )
-                for i, box in enumerate(boxes):
-                    clue = boxes_clue[i]
-                    tollerances = [
-                        tollerance,
-                        tollerance,
-                        tollerance,
-                        tollerance,
-                    ]
+                for line in lines:
+                    boxes = line.boxes
+                    if len(boxes_clue) != len(boxes):
+                        print(
+                            f"image [{f}] has different number of boxes. JSON has [{len(boxes_clue)}]. Predict has [{len(boxes)}]"
+                        )
+                    for i, box in enumerate(boxes):
+                        clue = boxes_clue[i]
+                        tollerances = [
+                            tollerance,
+                            tollerance,
+                            tollerance,
+                            tollerance,
+                        ]
 
-                    for idx in range(4):
-                        v1 = box[idx]
-                        v2 = clue["bbox"][idx]
-                        diff: int = abs(v1 - v2)
-                        if diff > tollerances[idx]:
-                            errors.append(
-                                f"image [{f}], letter [{clue['char']}] idx [{i + 1}], [{labels[idx]}] value, white [{clue['bbox']}]\t red [{box}]"
-                            )
-                            if avg_diff[idx] == 0:
-                                avg_diff[idx] = diff
-                            else:
-                                avg_diff[idx] = int((avg_diff[idx] + diff) / 2)
+                        for idx in range(4):
+                            v1 = box.get_value_by_idx(idx)
+                            v2 = clue["bbox"][idx]
+                            diff: int = abs(v1 - v2)
+                            if diff > tollerances[idx]:
+                                errors.append(
+                                    f"image [{f}], letter [{clue['char']}] idx [{i + 1}], [{labels[idx]}] value, white [{clue['bbox']}]\t red [{box}]"
+                                )
+                                if avg_diff[idx] == 0:
+                                    avg_diff[idx] = diff
+                                else:
+                                    avg_diff[idx] = int((avg_diff[idx] + diff) / 2)
 
-                if not errors:
-                    print(f"image {f} is ok")
-                    correct.append(f)
-                else:
-                    print(f"image {f} errors:")
-                    for e in errors:
-                        print(f"\t => {e}")
+                    if not errors:
+                        print(f"image {f} is ok")
+                        correct.append(f)
+                    else:
+                        print(f"image {f} errors:")
+                        for e in errors:
+                            print(f"\t => {e}")
 
-            # draw boxes
-            if errors:
-                image_path = test_image_path(f"{f}.png")
-                img = Image.open(image_path)
-                if img.mode != "RGB":
-                    img = img.convert("RGB")
-                draw = ImageDraw.Draw(img)
-
-                cv2.imwrite(f"{test_image_path(f)}-dilatted.png", dilated_img)
-
-                # red for the prediction
-                for box in boxes:
-                    x, y, w, h = box
-                    draw.rectangle([x, y, x + w, y + h], outline="red")
-                    img.save(str(image_path).replace(".png", "-validation.png"))
     finally:
         remove_images(correct)
         for i in range(len(avg_diff)):

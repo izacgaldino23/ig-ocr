@@ -92,7 +92,8 @@ if __name__ == "__main__":
 
     for line in lines:
         curr_x = -1
-        for x, y, w, h in line:
+        for box in line.boxes:
+            x, y, w, h = box.get_values()
             roi = img[y : y + h, x : x + w]
             resized, input_tensor = process_roi(roi)
 
@@ -129,8 +130,8 @@ if __name__ == "__main__":
                     # Salva a imagem 28x28 da ROI que a rede errou
                     name = f"{idx + 1}_exp_{expected_char}_got_{char}"
                     print(name)
-                    # filename = f"{DEBUG_FOLDER}/{name}.png"
-                    # cv2.imwrite(filename, resized)
+                    filename = f"{DEBUG_FOLDER}/{name}.png"
+                    cv2.imwrite(filename, resized)
 
         new_line = True
 
