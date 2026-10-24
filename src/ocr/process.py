@@ -1,18 +1,26 @@
+import os
+
 import cv2
 import numpy as np
 import torch
+from cv2.typing import MatLike
 
 from src.neural_network.config import init_config
 from src.neural_network.model import MEAN, STD, SimpleCNN
 from src.search_block.analyzer import character_segmentation
-from src.utils.paths import checkpoint_path
+from src.utils.paths import DEBUG_FOLDER, checkpoint_path
 
 
 # process_roi receives a cut of the original image of each character
 # stabilize it and return a 28x28 tensor
 # ready for EMINIST Neural Network processing
 # ROI means Region Of Interest
-def process_roi(roi: np.ndarray) -> torch.Tensor:
+def process_roi(
+    roi: np.ndarray, rotate: bool = False, printout=False
+) -> tuple[MatLike, torch.Tensor]:
+    if rotate:
+        roi = cv2.transpose(roi)
+
     h, w = roi.shape
 
     # get the bigger side
@@ -42,10 +50,23 @@ def process_roi(roi: np.ndarray) -> torch.Tensor:
     # identical normalization with the training
     tensor_img = (tensor_img - MEAN) / STD
 
-    return tensor_img
+    # if printout:
+    #     cv2.imwrite("debug_roi_28x28.png", resized)
+
+    return resized, tensor_img
+
+
+def remove_debug_images():
+    files = os.listdir(DEBUG_FOLDER)
+    for f in files:
+        if os.path.isfile(f"{DEBUG_FOLDER}/{f}"):
+            os.remove(f"{DEBUG_FOLDER}/{f}")
 
 
 if __name__ == "__main__":
+    os.makedirs(DEBUG_FOLDER, exist_ok=True)
+    remove_debug_images()
+
     img, lines = character_segmentation("6455")
     original_text = (
         "Lorem Ipsum is simply dummy text of the printing and typesetting industry"
@@ -67,18 +88,20 @@ if __name__ == "__main__":
     tollerance = 4
     new_line = False
 
+    results = {"correct": 0, "case_swap": 0, "number_swap": 0, "wrong_char": 0}
+
     for line in lines:
         curr_x = -1
         for x, y, w, h in line:
             roi = img[y : y + h, x : x + w]
-            input_tensor = process_roi(roi)
+            resized, input_tensor = process_roi(roi)
 
             if new_line:
                 new_line = False
                 predicted_text += " "
 
             if curr_x != -1 and abs(x - curr_x) > tollerance:  # has space
-                print(f"Space size {abs(x - curr_x)}")
+                # print(f"Space size {abs(x - curr_x)}")
                 predicted_text += " "
 
             curr_x = x + w
@@ -90,8 +113,29 @@ if __name__ == "__main__":
                 char = class_names[int(pred.item())]
 
                 predicted_text += char
+                idx = len(predicted_text) - 1
+                expected_char = original_text[idx]
+
+                if char == expected_char:
+                    results["correct"] += 1
+                elif char.lower() == expected_char.lower():
+                    results["case_swap"] += 1
+                elif char.isalnum() != expected_char.isalnum():
+                    results["number_swap"] += 1
+                else:
+                    results["wrong_char"] += 1
+
+                if char != expected_char:
+                    # Salva a imagem 28x28 da ROI que a rede errou
+                    name = f"{idx + 1}_exp_{expected_char}_got_{char}"
+                    print(name)
+                    # filename = f"{DEBUG_FOLDER}/{name}.png"
+                    # cv2.imwrite(filename, resized)
 
         new_line = True
 
     print(f"Original text:  \t '{original_text}'")
     print(f"Predicted text: \t '{predicted_text}'")
+    print("== RESULTS ==")
+    for k, v in results.items():
+        print(f"{k} \t{v}")

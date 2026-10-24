@@ -15,7 +15,7 @@ def character_segmentation(image_name: str):
     if img is None:
         raise FileNotFoundError(f"Invalid file {image_name}.png")
 
-    # simple binary convertion (for middle gray colors)
+    # simple binary conversion (for middle gray colors)
     _, tresh = cv2.threshold(img, 50, 255, cv2.THRESH_BINARY)
 
     # dilate to join closer white from the same character
