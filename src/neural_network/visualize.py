@@ -13,11 +13,11 @@ test_dataset = get_emnist_dataset(False)
 
 # 3. modelo
 # model = SimpleNeuralNetwork(args.input)
-model = SimpleCNN()
 file = checkpoint_path(args.input)
 content = torch.load(file)
-model.load_state_dict(content["model"])
 class_names = content["classes"]
+model = SimpleCNN(num_classes=len(class_names))
+model.load_state_dict(content["model"])
 
 model = model.to(device)
 

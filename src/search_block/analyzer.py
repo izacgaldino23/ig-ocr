@@ -94,10 +94,10 @@ class Line:
             _, y = self.bbox.get_second_coord()
             x1, y1 = box.get_second_coord()
 
-            # box.set_y(min(self.bbox.y, box.y))
+            box.set_y(min(self.bbox.y, box.y))
 
-            # box.set_second_coord(x1, max(y, y1))
-            # box.h = max(box.h, y - box.y)
+            box.set_second_coord(x1, max(y, y1))
+            box.h = max(box.h, y - box.y)
 
 
 def character_segmentation(image_name: str):
@@ -166,7 +166,7 @@ def sort_boxes_by_line(boxes: list[Box], tolerance=25) -> list[Line]:
     for line in lines:
         if line.baseline - line.bbox.y < max_line_height:
             line.bbox.set_y(line.baseline - max_line_height)
-        line.normalize_boxes_height()
+        # line.normalize_boxes_height()
 
     # parse the boxes to a 1d list with all boxes in the correct order
     # final_boxes = [box for line in lines for box in line]

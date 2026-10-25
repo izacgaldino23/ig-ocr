@@ -6,7 +6,7 @@ from src.neural_network.model import SimpleCNN, get_emnist_dataset
 from src.utils.paths import checkpoint_path
 
 # 1. Configuração inicial
-args, device = init_config(True)
+args, device = init_config()
 
 # Baixar e carregar o conjunto de dados
 test_dataset = get_emnist_dataset(False)
@@ -17,11 +17,11 @@ test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
 
 # modelo
 # model = SimpleNeuralNetwork(args.input)
-model = SimpleCNN()
 file = checkpoint_path(args.input)
 content = torch.load(file)
-model.load_state_dict(content["model"])
 class_names: list[str] = content["classes"]
+model = SimpleCNN(num_classes=len(class_names))
+model.load_state_dict(content["model"])
 
 model = model.to(device)
 

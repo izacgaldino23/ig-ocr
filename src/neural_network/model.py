@@ -11,7 +11,7 @@ MODELS = [[28 * 28, 128, 64, 10]]
 MEAN = 0.1307
 STD = 0.3081
 
-EMINIST_BALANCED_VALUES = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabdefghnqrt"
+EMNIST_BYCLASS_VALUES = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 
 class SimpleNeuralNetwork(nn.Module):
@@ -45,7 +45,7 @@ class SimpleNeuralNetwork(nn.Module):
 
 
 class SimpleCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, num_classes: int = 47):
         super().__init__()
 
         # Bloco 1
@@ -88,7 +88,7 @@ class SimpleCNN(nn.Module):
         self.fc1_relu = nn.ReLU()
         self.fc1_drop = nn.Dropout(0.5)
 
-        self.fc2 = nn.Linear(512, 47)
+        self.fc2 = nn.Linear(512, num_classes)
 
     def forward(self, x):
         # Bloco 1
@@ -106,6 +106,43 @@ class SimpleCNN(nn.Module):
         x = self.fc2(x)
 
         return x
+
+
+def load_checkpoint_weights(
+    model: SimpleCNN,
+    state: dict[str, torch.Tensor],
+    checkpoint_classes: list[str],
+    target_classes: list[str],
+) -> bool:
+    model_state = model.state_dict()
+    output_keys = {"fc2.weight", "fc2.bias"}
+
+    if any(
+        name not in state or state[name].shape != value.shape
+        for name, value in model_state.items()
+        if name not in output_keys
+    ):
+        return False
+
+    if (
+        state["fc2.weight"].shape[0] != len(checkpoint_classes)
+        or state["fc2.bias"].shape[0] != len(checkpoint_classes)
+    ):
+        return False
+
+    for name, value in state.items():
+        if name not in output_keys:
+            model_state[name] = value
+
+    with torch.no_grad():
+        for old_idx, class_name in enumerate(checkpoint_classes):
+            if class_name in target_classes:
+                new_idx = target_classes.index(class_name)
+                model_state["fc2.weight"][new_idx].copy_(state["fc2.weight"][old_idx])
+                model_state["fc2.bias"][new_idx].copy_(state["fc2.bias"][old_idx])
+
+    model.load_state_dict(model_state)
+    return True
 
 
 def custom_noise_erasing(img):
@@ -157,7 +194,7 @@ def get_transformers():
 def get_emnist_dataset(train: bool, download: bool = False):
     return datasets.EMNIST(
         DATA_DIR,
-        "balanced",
+        "byclass",
         train=train,
         download=download,
         transform=get_transformers(),

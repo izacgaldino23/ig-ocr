@@ -22,11 +22,11 @@ class DigitRecognizerApp:
 
         # 1. Carregando o modelo treinado
         # self.model = SimpleNeuralNetwork(args.input)
-        self.model = SimpleCNN()
         file = checkpoint_path(args.input)
         content = torch.load(file)
-        self.model.load_state_dict(content["model"])
         self.class_names = content["classes"]
+        self.model = SimpleCNN(num_classes=len(self.class_names))
+        self.model.load_state_dict(content["model"])
         self.model = self.model.to(device)
 
         self.model.eval()

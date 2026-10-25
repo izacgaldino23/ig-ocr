@@ -1,11 +1,12 @@
 # NUMBER OCR
 
-Projeto de reconhecimento de dígitos usando o conjunto de dados MNIST.
+Projeto de reconhecimento de caracteres usando o conjunto de dados EMNIST ByClass
+(dígitos, letras maiúsculas e minúsculas).
 
 ## Estrutura
 
 - `src/`: módulos Python do projeto.
-- `data/raw/`: conjunto de dados MNIST; o torchvision mantém os arquivos em `data/raw/MNIST/raw/`.
+- `data/raw/`: conjunto de dados EMNIST; o torchvision mantém os arquivos em `data/raw/EMNIST/raw/`.
 - `artifacts/checkpoints/`: pesos dos modelos treinados.
 
 ## Executar
@@ -25,4 +26,13 @@ Use `-i` ou `--input` para selecionar o índice do modelo, por exemplo:
 python -m src.neural_network.train --input 0
 ```
 
-O MNIST será baixado para `data/raw/` quando necessário, e os checkpoints serão salvos em `artifacts/checkpoints/`.
+Para treinar um novo modelo ByClass reaproveitando as camadas compatíveis do checkpoint
+`emnist-3.0.pth`:
+
+```powershell
+python -m src.neural_network.train --input 3.0 --output 4.0
+```
+
+Os checkpoints antigos treinados com EMNIST Balanced não incluem a classe `i` minúscula;
+é necessário treinar e usar o novo checkpoint para reconhecê-la. O conjunto ByClass deve
+estar disponível em `data/raw/`, e os checkpoints são salvos em `artifacts/checkpoints/`.

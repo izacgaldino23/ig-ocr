@@ -5,7 +5,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.neural_network.config import init_config
-from src.neural_network.model import SimpleCNN, get_emnist_dataset
+from src.neural_network.model import (
+    SimpleCNN,
+    get_emnist_dataset,
+    load_checkpoint_weights,
+)
 from src.utils.paths import checkpoint_path
 
 
@@ -37,26 +41,51 @@ def main():
 
     # 4. Criar a rede
     # model = SimpleNeuralNetwork(args.input)
-    model = SimpleCNN()
+    model = SimpleCNN(num_classes=len(train_dataset.classes))
     file = checkpoint_path(args.input)
     print("4. Rede criada com sucesso!")
 
     if file.exists():
         content = torch.load(file)
-        model.load_state_dict(content["model"])
-        print("5. Modelo carregado com sucesso!")
+        if load_checkpoint_weights(
+            model, content["model"], content["classes"], train_dataset.classes
+        ):
+            print(
+                "5. Pesos compatíveis carregados; classes novas serão treinadas do zero."
+            )
+        else:
+            print("5. Arquitetura incompatível; iniciando um modelo novo.")
+            if args.output == 0 or args.output == args.input:
+                raise ValueError(
+                    "O checkpoint de entrada é incompatível com o modelo ByClass. "
+                    "Escolha uma saída diferente para preservar o checkpoint existente."
+                )
     else:
         print("5. Modulo novo!")
 
     model = model.to(device)
 
-    loss_fn = torch.nn.CrossEntropyLoss()
+    # 1. Contamos quantas imagens existem por classe no dataset
+    # (Garante que usamos 'targets' do PyTorch)
+    targets = train_dataset.targets.detach().clone()
+    class_counts = torch.bincount(targets)
+
+    # 2. Calculamos o peso inverso proporcional à frequência de cada classe
+    class_weights = 1.0 / (class_counts.float() + 1e-5)
+
+    # Normalizamos para evitar que a perda fique com valores gigantescos
+    class_weights = class_weights / class_weights.sum()
+
+    # Enviamos o tensor de pesos para a mesma GPU/CPU onde o modelo está
+    class_weights = class_weights.to(device)
+
+    loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=1)
 
     # Loop de treinamento
-    epochs = 5
+    epochs = 3
     print("6. Comecando o treinamento...")
 
     start_total = time.perf_counter()

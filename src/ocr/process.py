@@ -83,11 +83,11 @@ if __name__ == "__main__":
 
     args, device = init_config(True)
 
-    model = SimpleCNN()
     file = checkpoint_path(args.input)
     content = torch.load(file)
-    model.load_state_dict(content["model"])
     class_names: list[str] = content["classes"]
+    model = SimpleCNN(num_classes=len(class_names))
+    model.load_state_dict(content["model"])
 
     model = model.to(device)
 
