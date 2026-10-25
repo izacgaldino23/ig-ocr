@@ -38,16 +38,27 @@ class Box:
     def set_values(self, values: tuple[int, int, int, int]):
         self.x, self.y, self.w, self.h = values
 
+    def set_x(self, x):
+        end_x = self.x + self.w
+        self.x = x
+        self.w = end_x - x
+
+    def set_y(self, y):
+        end_y = self.y + self.h
+        self.y = y
+        self.h = end_y - y
+
 
 class Line:
     def __init__(self, boxes: list[Box] | None) -> None:
         self.bbox = Box()
+        self.boxes: list[Box] = []
+        self.baseline = 0
+        self.baseline_defined = False
+
         if boxes:
-            self.boxes = boxes
-            x, y, w, h = boxes[0].get_values()
-            self.bbox.set_values((x, y, w, h))
-        else:
-            self.boxes: list[Box] = []
+            for box in boxes:
+                self.add_box(box)
 
     def add_box(self, box: Box):
         self.boxes.append(box)
@@ -55,10 +66,17 @@ class Line:
         if len(self.boxes) == 1:
             x, y, w, h = box.get_values()
             self.bbox.set_values((x, y, w, h))
+            self.baseline = y + h
             return
 
-        self.bbox.x = min(self.bbox.x, box.x)
-        self.bbox.y = min(self.bbox.y, box.y)
+        # Update baseline
+        box_y = box.y + box.h
+        if not self.baseline_defined and abs(box_y - self.baseline) > 2:
+            self.baseline = min(self.baseline, box_y)
+            self.baseline_defined = True
+
+        self.bbox.set_x(min(self.bbox.x, box.x))
+        self.bbox.set_y(min(self.bbox.y, box.y))
 
         x, y = self.bbox.get_second_coord()
         x1, y1 = box.get_second_coord()
@@ -73,11 +91,12 @@ class Line:
 
     def normalize_boxes_height(self):
         for box in self.boxes:
-
             _, y = self.bbox.get_second_coord()
+            x1, y1 = box.get_second_coord()
 
-            box.y = min(self.bbox.y, box.y)
-            box.h = max(box.h, y - box.y)
+            box.set_y(min(self.bbox.y, box.y))
+            box.set_second_coord(x1, max(y, y1))
+            # box.h = max(box.h, y - box.y)
 
 
 def character_segmentation(image_name: str):
@@ -136,7 +155,16 @@ def sort_boxes_by_line(boxes: list[Box], tolerance=25) -> list[Line]:
 
     # sort lines by y
     lines = sorted(lines, key=lambda l: l.get_box_by_index(0).y)
+
+    # adjust all lines by baseline
+    max_line_height = lines[0].baseline - lines[0].bbox.y
+    for line in lines[1:]:
+        max_line_height = max(max_line_height, line.baseline - line.bbox.y)
+
+    # normalize boxes inside each line
     for line in lines:
+        if line.baseline - line.bbox.y < max_line_height:
+            line.bbox.set_y(line.baseline - max_line_height)
         line.normalize_boxes_height()
 
     # parse the boxes to a 1d list with all boxes in the correct order
@@ -145,19 +173,23 @@ def sort_boxes_by_line(boxes: list[Box], tolerance=25) -> list[Line]:
     return lines
 
 
-def normalize_boxes_by_line(lines: list[Line]):
-    pass
-
-
 if __name__ == "__main__":
-    image_name = "9857"
-    img, boxes = character_segmentation(image_name)
+    image_name = "6455"
+    img, lines = character_segmentation(image_name)
     # cv2.imwrite(f"{test_image_path(image_name)}-dilatted.png", img)
-    # for b in boxes:
-    #     start = (b[0], b[1])
-    #     end = (b[0] + b[2], b[1] + b[3])
-    #     cv2.rectangle(img, start, end, (250, 0, 0), 1)
+    for line in lines:
+        for b in line.boxes:
+            start = (b.x, b.y)
+            end = b.get_second_coord()
+            cv2.rectangle(img, start, end, (250, 0, 0), 1)
 
-    # cv2.imshow("boxes", img)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+        cv2.line(
+            img,
+            [line.bbox.x - 4, line.baseline],
+            [line.bbox.x + line.bbox.w + 4, line.baseline],
+            (250, 0, 0),
+        )
+
+    cv2.imshow("boxes", img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
