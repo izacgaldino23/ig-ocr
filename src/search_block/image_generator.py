@@ -1,9 +1,33 @@
 import json
+import os
 import random
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
 from src.utils.paths import test_image_path
+
+
+def _find_shantell_font() -> Path | None:
+    font_dirs = []
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    windows_dir = os.environ.get("WINDIR")
+
+    if local_app_data:
+        font_dirs.append(Path(local_app_data) / "Microsoft" / "Windows" / "Fonts")
+    if windows_dir:
+        font_dirs.append(Path(windows_dir) / "Fonts")
+
+    for font_dir in font_dirs:
+        if font_dir.is_dir():
+            for font_file in font_dir.iterdir():
+                if (
+                    font_file.suffix.casefold() in {".ttf", ".otf"}
+                    and "shantell" in font_file.stem.casefold()
+                ):
+                    return font_file
+
+    return None
 
 
 def generate_test_image(text: str):
@@ -20,10 +44,16 @@ def generate_test_image(text: str):
 
     # try to load a system font
     font_size = random.randint(10, 25)
-    try:
-        font = ImageFont.truetype("arial.ttf", size=font_size)
-    except OSError:
+    font_path = _find_shantell_font()
+    if font_path is None:
         font = ImageFont.load_default()
+        print("Shantell Sans font file not found; using the default font.")
+    else:
+        try:
+            font = ImageFont.truetype(str(font_path), size=font_size)
+        except OSError as error:
+            font = ImageFont.load_default()
+            print(f"Could not load Shantell Sans from {font_path}: {error}")
 
     clue = []
 

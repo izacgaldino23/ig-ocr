@@ -7,7 +7,7 @@ from cv2.typing import MatLike
 
 from src.neural_network.config import init_config
 from src.neural_network.model import MEAN, STD, SimpleCNN
-from src.search_block.analyzer import character_segmentation
+from src.search_block.analyzer import Box, Line, character_segmentation
 from src.utils.paths import DEBUG_FOLDER, checkpoint_path
 
 
@@ -63,11 +63,19 @@ def remove_debug_images():
             os.remove(f"{DEBUG_FOLDER}/{f}")
 
 
+def pos_processing_letter(line: Line, box: Box, char: str):
+    tresshold = line.bbox.h * 0.05
+    if abs(box.y - line.bbox.y) > tresshold and str.isupper:
+        return char.lower()
+
+    return char
+
+
 if __name__ == "__main__":
     os.makedirs(DEBUG_FOLDER, exist_ok=True)
     remove_debug_images()
 
-    img, lines = character_segmentation("6455")
+    img, lines = character_segmentation("9800")
     original_text = (
         "Lorem Ipsum is simply dummy text of the printing and typesetting industry"
     )
@@ -113,6 +121,7 @@ if __name__ == "__main__":
                 _, pred = torch.max(output, 1)
                 char = class_names[int(pred.item())]
 
+                char = pos_processing_letter(line, box, char)
                 predicted_text += char
                 idx = len(predicted_text) - 1
                 expected_char = original_text[idx]

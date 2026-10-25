@@ -94,8 +94,9 @@ class Line:
             _, y = self.bbox.get_second_coord()
             x1, y1 = box.get_second_coord()
 
-            box.set_y(min(self.bbox.y, box.y))
-            box.set_second_coord(x1, max(y, y1))
+            # box.set_y(min(self.bbox.y, box.y))
+
+            # box.set_second_coord(x1, max(y, y1))
             # box.h = max(box.h, y - box.y)
 
 
@@ -174,7 +175,7 @@ def sort_boxes_by_line(boxes: list[Box], tolerance=25) -> list[Line]:
 
 
 if __name__ == "__main__":
-    image_name = "6455"
+    image_name = "9800"
     img, lines = character_segmentation(image_name)
     # cv2.imwrite(f"{test_image_path(image_name)}-dilatted.png", img)
     for line in lines:
