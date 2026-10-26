@@ -1,6 +1,7 @@
 import time
 from datetime import datetime
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -52,9 +53,7 @@ def main():
     # 4. Create the network.
     # model = SimpleNeuralNetwork(args.input)
     channels = COMPACT_CNN_CHANNELS if args.compact else DEFAULT_CNN_CHANNELS
-    architecture = (
-        COMPACT_CNN_ARCHITECTURE if args.compact else SIMPLE_CNN_ARCHITECTURE
-    )
+    architecture = COMPACT_CNN_ARCHITECTURE if args.compact else SIMPLE_CNN_ARCHITECTURE
     model = SimpleCNN(num_classes=len(train_dataset.classes), channels=channels)
     file = checkpoint_path(args.input)
     print("4. Network created successfully!")
@@ -95,9 +94,11 @@ def main():
     class_weights = class_weights.to(device)
 
     loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=1)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="max", factor=0.5, patience=2
+    )
 
     # Training loop.
     epochs = 3
@@ -111,27 +112,23 @@ def main():
         batches_in_interval = 0
         total = 0
         correct = torch.zeros((), device=device, dtype=torch.long)
+
+        model.train()
+
         for batch_idx, (images, labels) in enumerate(train_loader, 0):
             images = images.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
 
-            # Run the network prediction.
             outputs = model(images)
-
-            # Calculate the loss.
             loss = loss_fn(outputs, labels)
-
-            # Backpropagate the loss.
             loss.backward()
 
-            # Update the weights and clear the gradients.
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
 
             running_loss += loss.detach()
             batches_in_interval += 1
 
-            # Calculate accuracy.
             total += labels.size(0)
             correct += (outputs.detach().argmax(dim=1) == labels).sum()
 
@@ -145,7 +142,6 @@ def main():
                     f"Loss: {avg_loss:.4f}, "
                     f"Accuracy: {accuracy * 100:.2f}%"
                 )
-                # Reset the interval counters.
                 running_loss.zero_()
                 batches_in_interval = 0
                 correct.zero_()
@@ -154,6 +150,32 @@ def main():
         epoch_duration = time.perf_counter() - epoch_start
         print(
             f"[{datetime.now().strftime('%H:%M:%S')}] -> Epoch {epoch + 1} finished in {epoch_duration:.2f}s"
+        )
+
+        # Validation test
+        model.eval()
+        val_correct = 0
+        val_total = 0
+
+        with torch.no_grad():
+            for val_images, val_labels in train_loader:
+                val_images = val_images.to(device, non_blocking=True)
+                val_labels = val_labels.to(device, non_blocking=True)
+
+                val_outputs = model(val_images)
+                val_total += val_labels.size(0)
+                val_correct += (val_outputs.argmax(dim=1) == val_labels).sum().item()
+
+        val_accuracy = val_correct / val_total
+        print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] Validation -> Epoch {epoch + 1}: Accuracy: {val_accuracy * 100:.2f}%"
+        )
+
+        scheduler.step(val_accuracy)
+
+        current_lr = optimizer.param_groups[0]["lr"]
+        print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] Current Learning Rate: {current_lr}\n"
         )
 
     total_duration = time.perf_counter() - start_total

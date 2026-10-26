@@ -8,14 +8,8 @@ from src.utils.paths import DATA_DIR
 
 MODELS = [[28 * 28, 128, 64, 10]]
 # MNIST normalization values.
-MEAN = 0.1307
-STD = 0.3081
-
-EMNIST_BYCLASS_VALUES = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-DEFAULT_CNN_CHANNELS = (32, 64, 128, 128)
-COMPACT_CNN_CHANNELS = (28, 56, 112, 112)
-SIMPLE_CNN_ARCHITECTURE = "simple_cnn_v1"
-COMPACT_CNN_ARCHITECTURE = "simple_cnn_compact_v1"
+MEAN = 0.1736
+STD = 0.3317
 
 
 class SimpleNeuralNetwork(nn.Module):
@@ -48,6 +42,12 @@ class SimpleNeuralNetwork(nn.Module):
         return x
 
 
+DEFAULT_CNN_CHANNELS = (32, 64, 128, 128)
+COMPACT_CNN_CHANNELS = (28, 56, 112, 112)
+SIMPLE_CNN_ARCHITECTURE = "simple_cnn_v1"
+COMPACT_CNN_ARCHITECTURE = "simple_cnn_compact_v1"
+
+
 class SimpleCNN(nn.Module):
     def __init__(
         self,
@@ -74,7 +74,7 @@ class SimpleCNN(nn.Module):
         self.relu2 = nn.ReLU()
 
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.drop1 = nn.Dropout2d(0.25)
+        self.drop1 = nn.Dropout2d(0.1)
 
         # Block 2
         # Third convolutional layer.
@@ -88,7 +88,7 @@ class SimpleCNN(nn.Module):
         self.relu4 = nn.ReLU()
 
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.drop2 = nn.Dropout2d(0.25)
+        self.drop2 = nn.Dropout2d(0.1)
 
         # Block 3
         self.flatten = nn.Flatten()
@@ -112,8 +112,8 @@ class SimpleCNN(nn.Module):
 
         # Final classification.
         x = self.flatten(x)
-        x = self.fc1(x)
-        x = self.fc1_drop(self.fc1_relu(self.fc1_bn(x)))
+        x = self.fc1_bn(self.fc1(x))
+        x = self.fc1_drop(self.fc1_relu(x))
         x = self.fc2(x)
 
         return x
@@ -138,9 +138,7 @@ def load_checkpoint_weights(
     ):
         return False
 
-    source_channels = tuple(
-        state[f"conv{idx}.weight"].shape[0] for idx in range(1, 5)
-    )
+    source_channels = tuple(state[f"conv{idx}.weight"].shape[0] for idx in range(1, 5))
     if any(
         state[f"conv{idx}.weight"].shape[1]
         != (1 if idx == 1 else source_channels[idx - 2])
@@ -176,11 +174,7 @@ def load_checkpoint_weights(
             or name.startswith("bn")
             and source.ndim == target.ndim == 1
         ):
-            if (
-                source.ndim != 1
-                or target.ndim != 1
-                or target.numel() > source.numel()
-            ):
+            if source.ndim != 1 or target.ndim != 1 or target.numel() > source.numel():
                 return False
             adapted_state[name] = source[: target.numel()]
         elif name == "fc1.weight":
@@ -197,12 +191,9 @@ def load_checkpoint_weights(
                 or target_channels_last > source_channels_last
             ):
                 return False
-            adapted_state[name] = (
-                source.reshape(source.shape[0], source_channels_last, 49)[
-                    :, :target_channels_last
-                ]
-                .reshape_as(target)
-            )
+            adapted_state[name] = source.reshape(
+                source.shape[0], source_channels_last, 49
+            )[:, :target_channels_last].reshape_as(target)
         else:
             return False
 
