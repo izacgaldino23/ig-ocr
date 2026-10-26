@@ -80,7 +80,7 @@ class SimpleCNN(nn.Module):
         self.drop2 = nn.Dropout2d(0.25)
 
         # Bloco 3
-        self.flatten = nn.Flatten()  # 6272
+        self.flatten = nn.Flatten()  # 128 * 7 * 7 = 6272
 
         # 3. Camadas completamente conectadas (Dense / Linear)
         self.fc1 = nn.Linear(128 * 7 * 7, 512)

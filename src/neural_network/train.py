@@ -68,13 +68,14 @@ def main():
     # 1. Contamos quantas imagens existem por classe no dataset
     # (Garante que usamos 'targets' do PyTorch)
     targets = train_dataset.targets.detach().clone()
-    class_counts = torch.bincount(targets)
+    class_counts = torch.bincount(targets).float()
 
     # 2. Calculamos o peso inverso proporcional à frequência de cada classe
-    class_weights = 1.0 / (class_counts.float() + 1e-5)
+    class_weights = 1.0 / (class_counts + 1e-5)
+    class_weights = torch.clamp(class_weights, max=100.0
 
     # Normalizamos para evitar que a perda fique com valores gigantescos
-    class_weights = class_weights / class_weights.sum()
+    class_weights = class_weights / class_weights.mean()
 
     # Enviamos o tensor de pesos para a mesma GPU/CPU onde o modelo está
     class_weights = class_weights.to(device)
