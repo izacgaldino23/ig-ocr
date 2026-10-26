@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw, ImageTk
 from torchvision import transforms
 
 from src.neural_network.config import init_config
-from src.neural_network.model import MEAN, STD, SimpleCNN
+from src.neural_network.model import MEAN, STD, model_from_checkpoint
 from src.utils.paths import checkpoint_path
 
 args, device = init_config()
@@ -25,9 +25,7 @@ class DigitRecognizerApp:
         file = checkpoint_path(args.input)
         content = torch.load(file)
         self.class_names = content["classes"]
-        self.model = SimpleCNN(num_classes=len(self.class_names))
-        self.model.load_state_dict(content["model"])
-        self.model = self.model.to(device)
+        self.model = model_from_checkpoint(content).to(device)
 
         self.model.eval()
 

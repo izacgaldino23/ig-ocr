@@ -20,6 +20,11 @@ def get_args():
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for repeatable comparisons"
     )
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="Train the reduced-channel CNN variant",
+    )
 
     args = parser.parse_args()
     if args.batch_size is not None and args.batch_size < 1:

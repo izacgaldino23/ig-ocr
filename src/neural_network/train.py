@@ -6,6 +6,10 @@ from torch.utils.data import DataLoader
 
 from src.neural_network.config import init_config
 from src.neural_network.model import (
+    COMPACT_CNN_ARCHITECTURE,
+    COMPACT_CNN_CHANNELS,
+    DEFAULT_CNN_CHANNELS,
+    SIMPLE_CNN_ARCHITECTURE,
     SimpleCNN,
     get_emnist_dataset,
     load_checkpoint_weights,
@@ -47,7 +51,11 @@ def main():
 
     # 4. Create the network.
     # model = SimpleNeuralNetwork(args.input)
-    model = SimpleCNN(num_classes=len(train_dataset.classes))
+    channels = COMPACT_CNN_CHANNELS if args.compact else DEFAULT_CNN_CHANNELS
+    architecture = (
+        COMPACT_CNN_ARCHITECTURE if args.compact else SIMPLE_CNN_ARCHITECTURE
+    )
+    model = SimpleCNN(num_classes=len(train_dataset.classes), channels=channels)
     file = checkpoint_path(args.input)
     print("4. Network created successfully!")
 
@@ -155,7 +163,11 @@ def main():
         file = checkpoint_path(args.output)
 
     file.parent.mkdir(parents=True, exist_ok=True)
-    content = {"model": model.state_dict(), "classes": train_dataset.classes}
+    content = {
+        "model": model.state_dict(),
+        "classes": train_dataset.classes,
+        "architecture": architecture,
+    }
     torch.save(content, file)
     print(f"8. Model saved successfully to {file}!")
 

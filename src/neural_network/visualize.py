@@ -2,7 +2,12 @@ import matplotlib.pyplot as plt
 import torch
 
 from src.neural_network.config import init_config
-from src.neural_network.model import MEAN, STD, SimpleCNN, get_emnist_dataset
+from src.neural_network.model import (
+    MEAN,
+    STD,
+    get_emnist_dataset,
+    model_from_checkpoint,
+)
 from src.utils.paths import checkpoint_path
 
 # 1. Initialize configuration.
@@ -16,10 +21,7 @@ test_dataset = get_emnist_dataset(False)
 file = checkpoint_path(args.input)
 content = torch.load(file)
 class_names = content["classes"]
-model = SimpleCNN(num_classes=len(class_names))
-model.load_state_dict(content["model"])
-
-model = model.to(device)
+model = model_from_checkpoint(content).to(device)
 
 # Disable gradient calculation.
 model.eval()
