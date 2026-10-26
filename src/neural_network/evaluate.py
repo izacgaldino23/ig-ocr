@@ -5,59 +5,68 @@ from src.neural_network.config import init_config
 from src.neural_network.model import SimpleCNN, get_emnist_dataset
 from src.utils.paths import checkpoint_path
 
-# 1. Initialize configuration
-args, device = init_config()
 
-# Download and load the dataset.
-test_dataset = get_emnist_dataset(False)
-print("Dataset loaded successfully!")
+def main():
+    args, device = init_config()
 
-# Create a data loader to split the data into batches.
-test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
+    test_dataset = get_emnist_dataset(False)
+    print("Dataset loaded successfully!")
 
-# Model
-# model = SimpleNeuralNetwork(args.input)
-file = checkpoint_path(args.input)
-content = torch.load(file)
-class_names: list[str] = content["classes"]
-model = SimpleCNN(num_classes=len(class_names))
-model.load_state_dict(content["model"])
-
-model = model.to(device)
-
-# Disable gradient calculation.
-model.eval()
-
-correct = 0
-total = 0
-# n: [total, correct]
-number_map = {i: [0, 0] for i in range(len(class_names))}
-
-with torch.no_grad():
-    for images, labels in test_loader:
-        images = images.to(device, non_blocking=True)
-        labels = labels.to(device, non_blocking=True)
-
-        outputs = model(images)
-        _, predicted = torch.max(outputs, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-        for i in range(labels.size(0)):
-            label_val = int(labels[i].item())
-            number_map[label_val][0] += 1
-            if predicted[i].item() == label_val:
-                number_map[label_val][1] += 1
-
-acurracy = correct / total
-print(f"Test dataset accuracy: {acurracy * 100:.2f}%")
-
-
-classes = dict(
-    sorted(number_map.items(), key=lambda kv: kv[1][1] / kv[1][0], reverse=True)
-)
-
-for i in classes:
-    print(
-        f"{class_names[i]}: {classes[i][1] / classes[i][0]:.4f}. [{classes[i][1]} of {classes[i][0]}]"
+    default_batch_size = 256 if device.type == "cuda" else 64
+    default_workers = 4 if device.type == "cuda" else 1
+    batch_size = args.batch_size or default_batch_size
+    workers = args.workers if args.workers is not None else default_workers
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=device.type == "cuda",
+        num_workers=workers,
+        persistent_workers=workers > 0,
     )
+
+    file = checkpoint_path(args.input)
+    content = torch.load(file, map_location="cpu", weights_only=True)
+    class_names: list[str] = content["classes"]
+    model = SimpleCNN(num_classes=len(class_names))
+    model.load_state_dict(content["model"])
+    model = model.to(device)
+    model.eval()
+
+    correct = torch.zeros((), dtype=torch.long, device=device)
+    total = 0
+    confusion = torch.zeros(
+        (len(class_names), len(class_names)), dtype=torch.long, device=device
+    )
+
+    with torch.inference_mode():
+        for images, labels in test_loader:
+            images = images.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+
+            outputs = model(images)
+            predicted = outputs.argmax(dim=1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum()
+            batch_confusion = torch.bincount(
+                labels * len(class_names) + predicted,
+                minlength=len(class_names) ** 2,
+            ).reshape(len(class_names), len(class_names))
+            confusion += batch_confusion
+
+    accuracy = correct.item() / total
+    print(f"Test dataset accuracy: {accuracy * 100:.2f}%")
+
+    confusion = confusion.cpu()
+    class_totals = confusion.sum(dim=1)
+    class_correct = confusion.diagonal()
+    class_accuracy = class_correct.float() / class_totals.clamp_min(1)
+    for i in class_accuracy.argsort(descending=True).tolist():
+        print(
+            f"{class_names[i]}: {class_accuracy[i]:.4f}. "
+            f"[{class_correct[i]} of {class_totals[i]}]"
+        )
+
+
+if __name__ == "__main__":
+    main()

@@ -18,24 +18,30 @@ def main():
 
     # 1. Initialize configuration.
     args, device = init_config()
+    torch.manual_seed(args.seed)
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(args.seed)
 
     # 2. Download and load the dataset.
     train_dataset = get_emnist_dataset(True)
     print("2. Dataset loaded successfully!")
 
     # 3. Create a data loader to split the data into batches.
-    batch_size = 64
-    workers = 1
+    default_batch_size = 64
+    default_workers = 1
     if device.type == "cuda":
-        batch_size = 256
-        workers = 4
+        default_batch_size = 256
+        default_workers = 4
+    batch_size = args.batch_size or default_batch_size
+    workers = args.workers if args.workers is not None else default_workers
 
     train_loader = DataLoader(
         train_dataset,
         shuffle=True,
-        pin_memory=True,
+        pin_memory=device.type == "cuda",
         batch_size=batch_size,
         num_workers=workers,
+        persistent_workers=workers > 0,
     )
     print(f"3. Loaded {len(train_loader)} batches successfully!")
 
@@ -93,10 +99,10 @@ def main():
 
     for epoch in range(epochs):
         epoch_start = time.perf_counter()
-        running_loss = 0.0
+        running_loss = torch.zeros((), device=device)
         batches_in_interval = 0
         total = 0
-        correct = 0
+        correct = torch.zeros((), device=device, dtype=torch.long)
         for batch_idx, (images, labels) in enumerate(train_loader, 0):
             images = images.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
@@ -112,19 +118,18 @@ def main():
 
             # Update the weights and clear the gradients.
             optimizer.step()
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
 
-            running_loss += float(loss.item())
+            running_loss += loss.detach()
             batches_in_interval += 1
 
             # Calculate accuracy.
             total += labels.size(0)
-            _, predicted = torch.max(outputs.data, 1)
-            correct += (predicted == labels).sum().item()
+            correct += (outputs.detach().argmax(dim=1) == labels).sum()
 
             if batch_idx % 200 == 199 or batch_idx == len(train_loader) - 1:
-                avg_loss = running_loss / batches_in_interval
-                accuracy = correct / total
+                avg_loss = running_loss.item() / batches_in_interval
+                accuracy = correct.item() / total
                 print(
                     f"[{datetime.now().strftime('%H:%M:%S')}] "
                     f"\t=> Epoch [{epoch + 1}/{epochs}], "
@@ -133,9 +138,9 @@ def main():
                     f"Accuracy: {accuracy * 100:.2f}%"
                 )
                 # Reset the interval counters.
-                running_loss = 0.0
+                running_loss.zero_()
                 batches_in_interval = 0
-                correct = 0
+                correct.zero_()
                 total = 0
 
         epoch_duration = time.perf_counter() - epoch_start

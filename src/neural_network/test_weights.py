@@ -26,7 +26,7 @@ def calculate_weights(class_counts: torch.Tensor, strategy: str = "log"):
 
 def main():
     print("Starting a quick class-weight test...")
-    args, device = init_config()
+    _, device = init_config()
 
     # Load the training dataset.
     train_dataset = get_emnist_dataset(True)
@@ -36,30 +36,32 @@ def main():
 
     strategies = ["log", "sqrt", "power_0.7", "inverse"]
 
-    sorted_counts, sorted_indices = torch.sort(class_counts)
+    _, sorted_indices = torch.sort(class_counts)
     print("\n--- 5 Rarest Classes ---")
     for i in range(5):
-        idx = sorted_indices[i].item()
+        idx = int(sorted_indices[i].item())
         print(f"  {class_names[idx]}: {int(class_counts[idx].item())} samples")
 
     print("\n--- 5 Most Common Classes ---")
     for i in range(5):
-        idx = sorted_indices[-(i + 1)].item()
+        idx = int(sorted_indices[-(i + 1)].item())
         print(f"  {class_names[idx]}: {int(class_counts[idx].item())} samples")
     print()
 
-    most_common_idx = sorted_indices[-1].item()
-    most_rare_idx = sorted_indices[0].item()
+    most_common_idx = int(sorted_indices[-1].item())
+    most_rare_idx = int(sorted_indices[0].item())
 
     for strat in strategies:
         weights = calculate_weights(class_counts, strat)
 
-        w_common = weights[most_common_idx].item()
-        w_rare = weights[most_rare_idx].item()
+        w_common = int(weights[most_common_idx].item())
+        w_rare = int(weights[most_rare_idx].item())
         ratio = w_rare / w_common
 
         print(f"Strategy [{strat}]:")
-        print(f"  - Common class weight ({class_names[most_common_idx]}): {w_common:.4f}")
+        print(
+            f"  - Common class weight ({class_names[most_common_idx]}): {w_common:.4f}"
+        )
         print(f"  - Rare class weight ({class_names[most_rare_idx]}): {w_rare:.4f}")
         print(f"  - Ratio (Rare / Common): {ratio:.1f}x")
         print(f"  - Min / Max weights: {weights.min():.4f} / {weights.max():.4f}")

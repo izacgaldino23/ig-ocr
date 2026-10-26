@@ -191,11 +191,22 @@ def get_transformers():
     )
 
 
+def get_evaluation_transformers():
+    return v2.Compose(
+        [
+            v2.Lambda(fix_emnist_orientation),
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize((MEAN,), (STD,)),
+        ]
+    )
+
+
 def get_emnist_dataset(train: bool, download: bool = False):
     return datasets.EMNIST(
         DATA_DIR,
         "byclass",
         train=train,
         download=download,
-        transform=get_transformers(),
+        transform=get_transformers() if train else get_evaluation_transformers(),
     )
