@@ -5,17 +5,17 @@ from src.neural_network.config import init_config
 from src.neural_network.model import SimpleCNN, get_emnist_dataset
 from src.utils.paths import checkpoint_path
 
-# 1. Configuração inicial
+# 1. Initialize configuration
 args, device = init_config()
 
-# Baixar e carregar o conjunto de dados
+# Download and load the dataset.
 test_dataset = get_emnist_dataset(False)
-print("dataset carregado com sucesso!")
+print("Dataset loaded successfully!")
 
-# Criar o dataloader para separar os dados em lotes
+# Create a data loader to split the data into batches.
 test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
 
-# modelo
+# Model
 # model = SimpleNeuralNetwork(args.input)
 file = checkpoint_path(args.input)
 content = torch.load(file)
@@ -25,7 +25,7 @@ model.load_state_dict(content["model"])
 
 model = model.to(device)
 
-# desligando o calculo de gradientes
+# Disable gradient calculation.
 model.eval()
 
 correct = 0
@@ -50,7 +50,7 @@ with torch.no_grad():
                 number_map[label_val][1] += 1
 
 acurracy = correct / total
-print(f"Acurácia da rede de imagens de testes: {acurracy * 100:.2f}%")
+print(f"Test dataset accuracy: {acurracy * 100:.2f}%")
 
 
 classes = dict(
@@ -59,5 +59,5 @@ classes = dict(
 
 for i in classes:
     print(
-        f"{class_names[i]}: {classes[i][1] / classes[i][0]:.4f}. [{classes[i][1]} de {classes[i][0]}]"
+        f"{class_names[i]}: {classes[i][1] / classes[i][0]:.4f}. [{classes[i][1]} of {classes[i][0]}]"
     )

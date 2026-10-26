@@ -91,7 +91,7 @@ if __name__ == "__main__":
 
     model = model.to(device)
 
-    # desligando o calculo de gradientes
+    # Disable gradient calculation.
     model.eval()
     tollerance = 4
     new_line = False
@@ -136,7 +136,7 @@ if __name__ == "__main__":
                     results["wrong_char"] += 1
 
                 if char != expected_char:
-                    # Salva a imagem 28x28 da ROI que a rede errou
+                    # Save the 28x28 ROI image for a misclassified character.
                     name = f"{idx + 1}_exp_{expected_char}_got_{char}"
                     print(name)
                     filename = f"{DEBUG_FOLDER}/{name}.png"

@@ -1,17 +1,17 @@
 # NUMBER OCR
 
-Projeto de reconhecimento de caracteres usando o conjunto de dados EMNIST ByClass
-(dígitos, letras maiúsculas e minúsculas).
+Character recognition project using the EMNIST ByClass dataset
+(digits, uppercase letters, and lowercase letters).
 
-## Estrutura
+## Project Structure
 
-- `src/`: módulos Python do projeto.
-- `data/raw/`: conjunto de dados EMNIST; o torchvision mantém os arquivos em `data/raw/EMNIST/raw/`.
-- `artifacts/checkpoints/`: pesos dos modelos treinados.
+- `src/`: project Python modules.
+- `data/raw/`: EMNIST dataset; torchvision stores its files in `data/raw/EMNIST/raw/`.
+- `artifacts/checkpoints/`: trained model weights.
 
-## Executar
+## Run
 
-Execute os comandos a partir da raiz do repositório:
+Run commands from the repository root:
 
 ```powershell
 python -m src.neural_network.train
@@ -20,19 +20,19 @@ python -m src.neural_network.visualize
 python -m src.neural_network.desktop
 ```
 
-Use `-i` ou `--input` para selecionar o índice do modelo, por exemplo:
+Use `-i` or `--input` to select a model index, for example:
 
 ```powershell
 python -m src.neural_network.train --input 0
 ```
 
-Para treinar um novo modelo ByClass reaproveitando as camadas compatíveis do checkpoint
+To train a new ByClass model while reusing compatible layers from the
 `emnist-3.0.pth`:
 
 ```powershell
 python -m src.neural_network.train --input 3.0 --output 4.0
 ```
 
-Os checkpoints antigos treinados com EMNIST Balanced não incluem a classe `i` minúscula;
-é necessário treinar e usar o novo checkpoint para reconhecê-la. O conjunto ByClass deve
-estar disponível em `data/raw/`, e os checkpoints são salvos em `artifacts/checkpoints/`.
+Existing checkpoints trained on EMNIST Balanced do not include the lowercase `i` class;
+train and use the new checkpoint to recognize it. The ByClass dataset must be available
+in `data/raw/`, and checkpoints are saved in `artifacts/checkpoints/`.

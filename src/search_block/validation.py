@@ -46,11 +46,11 @@ def main():
         for f in file_names:
             _, lines = character_segmentation(f)
 
-            # get file real cordinates
+            # Get the reference coordinates from the file.
             json_path = test_image_path(f"{f}.json")
 
             errors = []
-            # load json
+            # Load the JSON data.
             with open(json_path) as json_file:
                 data = json.load(json_file)
 
@@ -60,7 +60,7 @@ def main():
                     boxes = line.boxes
                     if len(boxes_clue) != len(boxes):
                         print(
-                            f"image [{f}] has different number of boxes. JSON has [{len(boxes_clue)}]. Predict has [{len(boxes)}]"
+                            f"Image [{f}] has a different number of boxes. JSON: [{len(boxes_clue)}]. Prediction: [{len(boxes)}]"
                         )
                     for i, box in enumerate(boxes):
                         clue = boxes_clue[i]
@@ -85,17 +85,17 @@ def main():
                                     avg_diff[idx] = int((avg_diff[idx] + diff) / 2)
 
                     if not errors:
-                        print(f"image {f} is ok")
+                        print(f"Image {f} is OK")
                         correct.append(f)
                     else:
-                        print(f"image {f} errors:")
+                        print(f"Image {f} errors:")
                         for e in errors:
                             print(f"\t => {e}")
 
     finally:
         remove_images(correct)
         for i in range(len(avg_diff)):
-            print(f"avg diff for {labels[i]} = {avg_diff[i]}")
+            print(f"Average difference for {labels[i]} = {avg_diff[i]}")
 
 
 if __name__ == "__main__":

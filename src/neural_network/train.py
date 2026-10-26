@@ -16,14 +16,14 @@ from src.utils.paths import checkpoint_path
 def main():
     torch.backends.cudnn.benchmark = True
 
-    # 1. Configuração inicial
+    # 1. Initialize configuration.
     args, device = init_config()
 
-    # 2. Baixar e carregar o conjunto de dados
+    # 2. Download and load the dataset.
     train_dataset = get_emnist_dataset(True)
-    print("2. dataset carregado com sucesso!")
+    print("2. Dataset loaded successfully!")
 
-    # 3. Criar o dataloader para separar os dados em lotes
+    # 3. Create a data loader to split the data into batches.
     batch_size = 64
     workers = 1
     if device.type == "cuda":
@@ -37,13 +37,13 @@ def main():
         batch_size=batch_size,
         num_workers=workers,
     )
-    print(f"3. {len(train_loader)} lotes carregados com sucesso!")
+    print(f"3. Loaded {len(train_loader)} batches successfully!")
 
-    # 4. Criar a rede
+    # 4. Create the network.
     # model = SimpleNeuralNetwork(args.input)
     model = SimpleCNN(num_classes=len(train_dataset.classes))
     file = checkpoint_path(args.input)
-    print("4. Rede criada com sucesso!")
+    print("4. Network created successfully!")
 
     if file.exists():
         content = torch.load(file)
@@ -51,33 +51,33 @@ def main():
             model, content["model"], content["classes"], train_dataset.classes
         ):
             print(
-                "5. Pesos compatíveis carregados; classes novas serão treinadas do zero."
+                "5. Compatible weights loaded; new classes will be trained from scratch."
             )
         else:
-            print("5. Arquitetura incompatível; iniciando um modelo novo.")
+            print("5. Incompatible architecture; starting a new model.")
             if args.output == 0 or args.output == args.input:
                 raise ValueError(
-                    "O checkpoint de entrada é incompatível com o modelo ByClass. "
-                    "Escolha uma saída diferente para preservar o checkpoint existente."
+                    "The input checkpoint is incompatible with the ByClass model. "
+                    "Choose a different output to preserve the existing checkpoint."
                 )
     else:
-        print("5. Modulo novo!")
+        print("5. New model!")
 
     model = model.to(device)
 
-    # 1. Contamos quantas imagens existem por classe no dataset
-    # (Garante que usamos 'targets' do PyTorch)
+    # 1. Count the number of images per class in the dataset.
+    # Use the PyTorch targets.
     targets = train_dataset.targets.detach().clone()
     class_counts = torch.bincount(targets).float()
 
-    # 2. Calculamos o peso inverso proporcional à frequência de cada classe
+    # 2. Calculate weights inversely proportional to each class frequency.
     class_weights = 1.0 / (class_counts + 1e-5)
-    class_weights = torch.clamp(class_weights, max=100.0
+    class_weights = torch.clamp(class_weights, max=100.0)
 
-    # Normalizamos para evitar que a perda fique com valores gigantescos
+    # Normalize the weights to prevent excessively large loss values.
     class_weights = class_weights / class_weights.mean()
 
-    # Enviamos o tensor de pesos para a mesma GPU/CPU onde o modelo está
+    # Move the weight tensor to the same GPU or CPU as the model.
     class_weights = class_weights.to(device)
 
     loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
@@ -85,9 +85,9 @@ def main():
 
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=1)
 
-    # Loop de treinamento
+    # Training loop.
     epochs = 3
-    print("6. Comecando o treinamento...")
+    print("6. Starting training...")
 
     start_total = time.perf_counter()
 
@@ -101,23 +101,23 @@ def main():
             images = images.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
 
-            # previsao da rede
+            # Run the network prediction.
             outputs = model(images)
 
-            # calculo de erro
+            # Calculate the loss.
             loss = loss_fn(outputs, labels)
 
-            # retropropagação
+            # Backpropagate the loss.
             loss.backward()
 
-            # atualiza os pesos e zera os gradientes
+            # Update the weights and clear the gradients.
             optimizer.step()
             optimizer.zero_grad()
 
             running_loss += float(loss.item())
             batches_in_interval += 1
 
-            # Acurácia
+            # Calculate accuracy.
             total += labels.size(0)
             _, predicted = torch.max(outputs.data, 1)
             correct += (predicted == labels).sum().item()
@@ -127,12 +127,12 @@ def main():
                 accuracy = correct / total
                 print(
                     f"[{datetime.now().strftime('%H:%M:%S')}] "
-                    f"\t=> Época [{epoch + 1}/{epochs}], "
-                    f"Lote [{batch_idx + 1}/{len(train_loader)}], "
-                    f"Perda: {avg_loss:.4f}, "
-                    f"Acurácia: {accuracy * 100:.2f}%"
+                    f"\t=> Epoch [{epoch + 1}/{epochs}], "
+                    f"Batch [{batch_idx + 1}/{len(train_loader)}], "
+                    f"Loss: {avg_loss:.4f}, "
+                    f"Accuracy: {accuracy * 100:.2f}%"
                 )
-                # Reseta os dois contadores do intervalo
+                # Reset the interval counters.
                 running_loss = 0.0
                 batches_in_interval = 0
                 correct = 0
@@ -140,11 +140,11 @@ def main():
 
         epoch_duration = time.perf_counter() - epoch_start
         print(
-            f"[{datetime.now().strftime('%H:%M:%S')}] -> Fim da Época {epoch + 1} em {epoch_duration:.2f}s"
+            f"[{datetime.now().strftime('%H:%M:%S')}] -> Epoch {epoch + 1} finished in {epoch_duration:.2f}s"
         )
 
     total_duration = time.perf_counter() - start_total
-    print(f"7. Treinamento concluido em {total_duration:.2f}s!")
+    print(f"7. Training completed in {total_duration:.2f}s!")
 
     if args.output != 0:
         file = checkpoint_path(args.output)
@@ -152,7 +152,7 @@ def main():
     file.parent.mkdir(parents=True, exist_ok=True)
     content = {"model": model.state_dict(), "classes": train_dataset.classes}
     torch.save(content, file)
-    print(f"8. Modelo salvo com sucesso como {file}!")
+    print(f"8. Model saved successfully to {file}!")
 
 
 if __name__ == "__main__":

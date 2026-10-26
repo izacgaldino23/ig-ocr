@@ -12,15 +12,15 @@ args, device = init_config()
 
 BAR_WIDTH = 160
 BAR_HEIGHT = 14
-PREVIEW_SCALE = 4  # 28x28 ampliado 4x para inspeção visual
+PREVIEW_SCALE = 4  # Enlarge the 28x28 image 4x for visual inspection.
 
 
 class DigitRecognizerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Reconhecedor de Dígitos MNIST")
+        self.root.title("MNIST Digit Recognizer")
 
-        # 1. Carregando o modelo treinado
+        # 1. Load the trained model.
         # self.model = SimpleNeuralNetwork(args.input)
         file = checkpoint_path(args.input)
         content = torch.load(file)
@@ -31,7 +31,7 @@ class DigitRecognizerApp:
 
         self.model.eval()
 
-        # 2. Coluna esquerda: área de desenho fixa
+        # 2. Left column: fixed drawing area.
         left = tk.Frame(root)
         left.pack(side=tk.LEFT, padx=10, pady=10)
 
@@ -42,31 +42,31 @@ class DigitRecognizerApp:
         self.canvas.pack()
         self.canvas.bind("<B1-Motion>", self.draw)
 
-        # Vinculando o evento de arrastar o mouse para desenhar
+        # Bind the mouse-drag event for drawing.
         buttons = tk.Frame(left)
         buttons.pack(pady=10)
 
         self.btn_predict = tk.Button(
-            buttons, text="Prever Dígito", command=self.predict
+            buttons, text="Predict", command=self.predict
         )
         self.btn_predict.pack(side=tk.LEFT, padx=5)
 
-        self.btn_clear = tk.Button(buttons, text="Limpar", command=self.clear_canvas)
+        self.btn_clear = tk.Button(buttons, text="Clear", command=self.clear_canvas)
         self.btn_clear.pack(side=tk.LEFT, padx=5)
 
-        # 3. Imagem auxiliar do Pillow para guardar o desenho em alta resolução
+        # 3. Pillow image used to store the drawing at high resolution.
         self.image = Image.new("L", (self.canvas_size, self.canvas_size), color=0)
         self.draw_tool = ImageDraw.Draw(self.image)
 
-        # 4. Coluna direita: preview 28x28 + lista de probabilidades
+        # 4. Right column: 28x28 preview and probability list.
         right = tk.Frame(root)
         right.pack(side=tk.LEFT, padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-        self.preview_label = tk.Label(right, text="Prévia 28x28", font=("Arial", 11))
+        self.preview_label = tk.Label(right, text="28x28 Preview", font=("Arial", 11))
         self.preview_label.pack(anchor="w")
 
         self.label_result = tk.Label(
-            right, text="Desenhe um número acima", font=("Arial", 13)
+            right, text="Draw a character above", font=("Arial", 13)
         )
         self.label_result.pack(anchor="w", pady=(8, 4))
 
@@ -94,7 +94,7 @@ class DigitRecognizerApp:
             self.bar_rects.append(rect)
 
     def draw(self, event):
-        # Desenha um círculo branco onde o mouse passa
+        # Draw a white circle along the mouse path.
         r = 8
         x, y = event.x, event.y
         self.canvas.create_oval(
@@ -106,8 +106,8 @@ class DigitRecognizerApp:
         self.canvas.delete("all")
         self.image = Image.new("L", (self.canvas_size, self.canvas_size), color=0)
         self.draw_tool = ImageDraw.Draw(self.image)
-        self.label_result.config(text="Desenhe um número acima")
-        self.preview_label.config(image="", text="Prévia 28x28")
+        self.label_result.config(text="Draw a character above")
+        self.preview_label.config(image="", text="28x28 Preview")
         self.photo = None
         self._reset_bars()
 
@@ -118,22 +118,22 @@ class DigitRecognizerApp:
             self.bar_canvases[i].itemconfig(self.bar_rects[i], fill="#7f8c8d")
 
     def predict(self):
-        # Recorta e centraliza o dígito antes de adequá-lo ao formato do MNIST
+        # Crop and center the character before resizing it to the MNIST format.
         img_processed = self.preprocess_and_center(self.image)
 
-        # Preview ampliado com vizinhança mais próxima para ver os pixels reais
+        # Enlarge the preview with nearest-neighbor interpolation to inspect its pixels.
         preview = img_processed.resize(
             (28 * PREVIEW_SCALE, 28 * PREVIEW_SCALE), Image.Resampling.NEAREST
         )
         self.photo = ImageTk.PhotoImage(preview)
         self.preview_label.config(image=self.photo, text="")
 
-        # Transforma em tensor e normaliza
+        # Convert to a tensor and normalize.
         tensor_image = transforms.ToTensor()(img_processed)
         tensor_image = transforms.Normalize((MEAN,), (STD,))(tensor_image)
         tensor_image = tensor_image.unsqueeze(0)
 
-        # Faz a predição com o modelo e converte os logits em probabilidades
+        # Run inference and convert the logits to probabilities.
         with torch.no_grad():
             output = self.model(tensor_image)
             probs = torch.softmax(output, dim=1)[0]
@@ -155,34 +155,34 @@ class DigitRecognizerApp:
                 self.bar_canvases[d].itemconfig(self.bar_rects[d], fill="#7f8c8d")
                 self.digit_labels[d].config(fg="black")
 
-        self.label_result.config(text=f"Previsão da Rede: {predicted_item}")
+        self.label_result.config(text=f"Network prediction: {predicted_item}")
 
     def preprocess_and_center(self, image_pil):
-        # 1. Encontra a caixa delimitadora (bounding box) dos pixels desenhados
+        # 1. Find the bounding box of the drawn pixels.
         bbox = image_pil.getbbox()
 
-        # Se a tela estiver toda preta (nada desenhado), retorna a imagem vazia
+        # Return the blank image if the canvas is empty.
         if not bbox:
             return image_pil.resize((28, 28))
 
-        # Recorta a imagem para conter apenas o dígito
+        # Crop the image to contain only the character.
         digit_crop = image_pil.crop(bbox)
 
-        # 2. Mantém a proporção tornando a imagem recortada em um quadrado
+        # 2. Preserve the aspect ratio by placing the crop in a square.
         w, h = digit_crop.size
         max_side = max(w, h)
 
-        # Cria uma nova tela preta quadrada com uma leve margem
+        # Create a new black square canvas with a small margin.
         square_img = Image.new("L", (max_side, max_side), color=0)
 
-        # Cola o recorte exatamente no centro do quadrado
+        # Paste the crop at the center of the square.
         offset = ((max_side - w) // 2, (max_side - h) // 2)
         square_img.paste(digit_crop, offset)
 
-        # 3. Redimensiona o dígito mantendo margens para o padrão MNIST (20x20 dentro de 28x28)
+        # 3. Resize the character with MNIST-style margins (20x20 within 28x28).
         digit_20x20 = square_img.resize((20, 20), Image.Resampling.LANCZOS)
 
-        # 4. Cria a imagem final 28x28 e cola o dígito de 20x20 no centro (margem de 4 pixels)
+        # 4. Create the final 28x28 image and center the 20x20 character (4-pixel margin).
         final_28x28 = Image.new("L", (28, 28), color=0)
         final_28x28.paste(digit_20x20, (4, 4))
 

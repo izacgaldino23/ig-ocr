@@ -5,13 +5,13 @@ from src.neural_network.config import init_config
 from src.neural_network.model import MEAN, STD, SimpleCNN, get_emnist_dataset
 from src.utils.paths import checkpoint_path
 
-# 1. Configuração inicial
+# 1. Initialize configuration.
 args, device = init_config(True)
 
-# 2. Baixar e carregar o conjunto de dados
+# 2. Download and load the dataset.
 test_dataset = get_emnist_dataset(False)
 
-# 3. modelo
+# 3. Model.
 # model = SimpleNeuralNetwork(args.input)
 file = checkpoint_path(args.input)
 content = torch.load(file)
@@ -21,10 +21,10 @@ model.load_state_dict(content["model"])
 
 model = model.to(device)
 
-# desligando o calculo de gradientes
+# Disable gradient calculation.
 model.eval()
 
-# escolher algumas imagens para visualizar
+# Select a few images to visualize.
 fig, axes = plt.subplots(1, 5, figsize=(12, 3))
 
 with torch.no_grad():
@@ -32,7 +32,7 @@ with torch.no_grad():
     wrong = 0
     i = 0
     for image, label in test_dataset:
-        # Adiciona uma dimensão extra para o lote (batch) já que a rede espera [batch_size, canais, altura, largura]
+        # Add a batch dimension; the network expects [batch_size, channels, height, width].
         output = model(image.unsqueeze(0))
         _, predicted = torch.max(output, 1)
 
@@ -41,12 +41,12 @@ with torch.no_grad():
 
         real_label = class_names[label]
         if predict_idx != label:
-            # Prepara a imagem para exibição (removendo a normalização e convertendo para numpy)
+            # Prepare the image for display by undoing normalization.
             img_display = image.squeeze(0) * STD + MEAN
 
             axes[wrong].imshow(img_display, cmap="gray")
-            axes[wrong].set_title(f"Real: {real_label}\nPred: {predicted_item}")
-            print(f"Real: {real_label}\t Pred: {predicted_item}\t Index: {i}")
+            axes[wrong].set_title(f"Actual: {real_label}\nPredicted: {predicted_item}")
+            print(f"Actual: {real_label}\t Predicted: {predicted_item}\t Index: {i}")
             axes[wrong].axis("off")
 
             wrong += 1
