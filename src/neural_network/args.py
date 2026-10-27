@@ -9,7 +9,7 @@ def get_args():
         "--batch-size",
         type=int,
         default=None,
-        help="Batch size (defaults to 256 on CUDA and 64 on CPU)",
+        help="Batch size (defaults to 1024 on CUDA and 64 on CPU)",
     )
     parser.add_argument(
         "--workers",
@@ -25,7 +25,16 @@ def get_args():
         action="store_true",
         help="Train the reduced-channel CNN variant",
     )
-
+    parser.add_argument(
+        "--amp",
+        action="store_true",
+        help="Use CUDA automatic mixed precision (FP16) with gradient scaling",
+    )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Profile five batches in the second epoch",
+    )
     args = parser.parse_args()
     if args.batch_size is not None and args.batch_size < 1:
         parser.error("--batch-size must be at least 1")

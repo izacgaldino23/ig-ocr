@@ -1,4 +1,5 @@
 import time
+from contextlib import nullcontext
 from datetime import datetime
 
 import torch
@@ -12,6 +13,7 @@ from src.neural_network.model import (
     SIMPLE_CNN_ARCHITECTURE,
     SimpleCNN,
     get_emnist_dataset,
+    get_gpu_augmentations,
     load_checkpoint_weights,
 )
 from src.utils.paths import checkpoint_path
@@ -34,7 +36,7 @@ def main():
     default_batch_size = 64
     default_workers = 1
     if device.type == "cuda":
-        default_batch_size = 256
+        default_batch_size = 1024
         default_workers = 4
     batch_size = args.batch_size or default_batch_size
     workers = args.workers if args.workers is not None else default_workers
@@ -76,6 +78,10 @@ def main():
         print("5. New model!")
 
     model = model.to(device)
+    use_amp = args.amp and device.type == "cuda"
+    if args.amp and not use_amp:
+        print("CUDA AMP requested, but CUDA is unavailable; using FP32.")
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     # 1. Count the number of images per class in the dataset.
     # Use the PyTorch targets.
@@ -101,6 +107,8 @@ def main():
 
     start_total = time.perf_counter()
 
+    gpu_transforms = get_gpu_augmentations().to(device)
+
     for epoch in range(epochs):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] -> Epoch {epoch + 1} started")
 
@@ -109,45 +117,71 @@ def main():
         batches_in_interval = 0
         total = 0
         correct = torch.zeros((), device=device, dtype=torch.long)
-        for batch_idx, (images, labels) in enumerate(train_loader, 0):
-            images = images.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
 
-            # Run the network prediction.
-            outputs = model(images)
+        prof_context = (
+            torch.profiler.profile(
+                activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                    torch.profiler.ProfilerActivity.CUDA,
+                ],
+                schedule=torch.profiler.schedule(wait=2, warmup=2, active=5, repeat=1),
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                    "./log/profiler"
+                ),
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+            )
+            if args.profile and epoch == 1
+            else nullcontext()
+        )
 
-            # Calculate the loss.
-            loss = loss_fn(outputs, labels)
+        with prof_context as prof:
+            for batch_idx, (images, labels) in enumerate(train_loader, 0):
+                images = images.to(device, non_blocking=True)
+                labels = labels.to(device, non_blocking=True)
 
-            # Back propagate the loss.
-            loss.backward()
+                if model.training:
+                    images = gpu_transforms(images)
 
-            # Update the weights and clear the gradients.
-            optimizer.step()
-            optimizer.zero_grad(set_to_none=True)
+                with torch.autocast(
+                    device_type=device.type,
+                    dtype=torch.float16,
+                    enabled=use_amp,
+                ):
+                    outputs = model(images)
+                    loss = loss_fn(outputs, labels)
 
-            running_loss += loss.detach()
-            batches_in_interval += 1
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
 
-            # Calculate accuracy.
-            total += labels.size(0)
-            correct += (outputs.detach().argmax(dim=1) == labels).sum()
+                running_loss += loss.detach()
+                batches_in_interval += 1
 
-            if batch_idx % 200 == 199 or batch_idx == len(train_loader) - 1:
-                avg_loss = running_loss.item() / batches_in_interval
-                accuracy = correct.item() / total
-                print(
-                    f"[{datetime.now().strftime('%H:%M:%S')}] "
-                    f"\t=> Epoch [{epoch + 1}/{epochs}], "
-                    f"Batch [{batch_idx + 1}/{len(train_loader)}], "
-                    f"Loss: {avg_loss:.4f}, "
-                    f"Accuracy: {accuracy * 100:.2f}%"
-                )
-                # Reset the interval counters.
-                running_loss.zero_()
-                batches_in_interval = 0
-                correct.zero_()
-                total = 0
+                # Calculate accuracy.
+                total += labels.size(0)
+                correct += (outputs.detach().argmax(dim=1) == labels).sum()
+
+                if batch_idx % 200 == 199 or batch_idx == len(train_loader) - 1:
+                    avg_loss = running_loss.item() / batches_in_interval
+                    accuracy = correct.item() / total
+                    print(
+                        f"[{datetime.now().strftime('%H:%M:%S')}] "
+                        f"\t=> Epoch [{epoch + 1}/{epochs}], "
+                        f"Batch [{batch_idx + 1}/{len(train_loader)}], "
+                        f"Loss: {avg_loss:.4f}, "
+                        f"Accuracy: {accuracy * 100:.2f}%"
+                    )
+                    # Reset the interval counters.
+                    running_loss.zero_()
+                    batches_in_interval = 0
+                    correct.zero_()
+                    total = 0
+
+                if prof is not None:
+                    prof.step()
 
         epoch_duration = time.perf_counter() - epoch_start
         print(

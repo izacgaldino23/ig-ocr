@@ -1,6 +1,8 @@
+import math
+
 import torch
-from PIL import Image
 from torch import nn
+from torch.nn import functional as F
 from torchvision import datasets
 from torchvision.transforms import v2
 
@@ -232,30 +234,100 @@ def model_from_checkpoint(content: dict) -> SimpleCNN:
     return model
 
 
-def custom_noise_erasing(img):
-    if torch.rand(1).item() > 0.1:  # Probability p=0.1
-        return img
+def random_affine_batch(img):
+    was_unbatched = img.ndim == 3
+    images = img.unsqueeze(0) if was_unbatched else img
+    batch_size, _, height, width = images.shape
+    device = images.device
 
-    _, h_img, w_img = img.shape
-    scale = torch.empty(1).uniform_(0.01, 0.2).item()
-    ratio = torch.empty(1).uniform_(0.2, 2.2).item()
-    
-    area = h_img * w_img * scale
-    h = round((area * ratio) ** 0.5)
-    w = round((area / ratio) ** 0.5)
-    
-    if h >= h_img or w >= w_img:
-        return img
-        
-    i = torch.randint(0, h_img - h + 1, (1,)).item()
-    j = torch.randint(0, w_img - w + 1, (1,)).item()
+    angle = torch.empty(batch_size, device=device).uniform_(-10.0, 10.0)
+    scale = torch.empty(batch_size, device=device).uniform_(0.8, 1.1)
+    translate_x = (
+        torch.empty(batch_size, device=device)
+        .uniform_(-0.1 * width, 0.1 * width)
+        .round()
+    )
+    translate_y = (
+        torch.empty(batch_size, device=device)
+        .uniform_(-0.1 * height, 0.1 * height)
+        .round()
+    )
+
+    angle = torch.deg2rad(angle)
+    cosine = angle.cos() / scale
+    sine = angle.sin() / scale
+    zero = torch.zeros_like(cosine)
+    theta = torch.stack(
+        (
+            torch.stack((cosine, sine * (height / width), zero), dim=1),
+            torch.stack((-sine * (width / height), cosine, zero), dim=1),
+        ),
+        dim=1,
+    )
+    theta[:, 0, 2] = -2 * (cosine * translate_x + sine * translate_y) / width
+    theta[:, 1, 2] = 2 * (sine * translate_x - cosine * translate_y) / height
+
+    grid = F.affine_grid(theta, images.shape, align_corners=False)
+    transformed = F.grid_sample(
+        images,
+        grid,
+        mode="nearest",
+        padding_mode="zeros",
+        align_corners=False,
+    )
+    return transformed.squeeze(0) if was_unbatched else transformed
+
+
+def custom_noise_erasing(img):
+    was_unbatched = img.ndim == 3
+    images = img.unsqueeze(0) if was_unbatched else img
+    batch_size, _, height, width = images.shape
+    device = images.device
+
+    erase = torch.rand(batch_size, device=device) < 0.1
+    area = height * width
+    log_ratio_min = math.log(0.2)
+    log_ratio_max = math.log(2.2)
+    scale = torch.empty(batch_size, 10, device=device).uniform_(0.01, 0.2)
+    ratio = (
+        torch.empty(batch_size, 10, device=device)
+        .uniform_(log_ratio_min, log_ratio_max)
+        .exp_()
+    )
+    candidate_height = (area * scale * ratio).sqrt().round().long()
+    candidate_width = (area * scale / ratio).sqrt().round().long()
+    valid = (
+        erase[:, None]
+        & (candidate_height > 0)
+        & (candidate_height < height)
+        & (candidate_width > 0)
+        & (candidate_width < width)
+    )
+    has_valid = valid.any(dim=1)
+    first_valid = valid.to(torch.long).argmax(dim=1, keepdim=True)
+    erase_height = candidate_height.gather(1, first_valid).squeeze(1)
+    erase_width = candidate_width.gather(1, first_valid).squeeze(1)
+    erase_height = torch.where(has_valid, erase_height, height)
+    erase_width = torch.where(has_valid, erase_width, width)
+
+    top = (torch.rand(batch_size, device=device) * (height - erase_height + 1)).long()
+    left = (torch.rand(batch_size, device=device) * (width - erase_width + 1)).long()
+
+    rows = torch.arange(height, device=device).view(1, height, 1)
+    columns = torch.arange(width, device=device).view(1, 1, width)
+    region = (
+        erase[:, None, None]
+        & (rows >= top[:, None, None])
+        & (rows < (top + erase_height)[:, None, None])
+        & (columns >= left[:, None, None])
+        & (columns < (left + erase_width)[:, None, None])
+    )
 
     val_black = (0.0 - MEAN) / STD
     val_gray = (0.5 - MEAN) / STD
-
-    noise = torch.empty((img.shape[0], h, w), dtype=img.dtype, device=img.device).uniform_(val_black, val_gray)
-    img[:, i:i+h, j:j+w] = noise
-    return img
+    noise = torch.empty_like(images).uniform_(val_black, val_gray)
+    erased_images = torch.where(region.unsqueeze(1), noise, images)
+    return erased_images.squeeze(0) if was_unbatched else erased_images
 
 
 def fix_emnist_orientation(img):
@@ -265,8 +337,6 @@ def fix_emnist_orientation(img):
 
 
 def get_transformers():
-    degrees = 10.0
-
     # Convert images to tensors and normalize them.
     # Also apply random translation, rotation, and scaling,
     # along with custom noise erasing.
@@ -275,22 +345,17 @@ def get_transformers():
             v2.ToImage(),
             v2.ToDtype(torch.float32, scale=True),
             v2.Lambda(fix_emnist_orientation),
-            v2.RandomAffine(
-                (-degrees, degrees), translate=(0.1, 0.1), scale=(0.8, 1.1)
-            ),
             v2.Normalize((MEAN,), (STD,)),
-            v2.Lambda(custom_noise_erasing),
         ]
     )
 
 
-def get_evaluation_transformers():
+def get_gpu_augmentations():
     return v2.Compose(
         [
-            v2.ToImage(),
-            v2.ToDtype(torch.float32, scale=True),
-            v2.Lambda(fix_emnist_orientation),
-            v2.Normalize((MEAN,), (STD,)),
+            # v2.RandomAffine((-10, 10), translate=(0.1, 0.1), scale=(0.8, 1.1)),
+            v2.Lambda(random_affine_batch),
+            v2.Lambda(custom_noise_erasing),
         ]
     )
 
@@ -301,5 +366,5 @@ def get_emnist_dataset(train: bool, download: bool = False):
         "byclass",
         train=train,
         download=download,
-        transform=get_transformers() if train else get_evaluation_transformers(),
+        transform=get_transformers(),
     )
