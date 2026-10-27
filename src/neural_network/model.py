@@ -42,7 +42,7 @@ class SimpleNeuralNetwork(nn.Module):
         return x
 
 
-DEFAULT_CNN_CHANNELS = (32, 64, 128, 128)
+DEFAULT_CNN_CHANNELS = (32, 32, 64, 64)
 COMPACT_CNN_CHANNELS = (28, 56, 112, 112)
 SIMPLE_CNN_ARCHITECTURE = "simple_cnn_v1"
 COMPACT_CNN_ARCHITECTURE = "simple_cnn_compact_v1"
@@ -61,14 +61,14 @@ class SimpleCNN(nn.Module):
         channel1, channel2, channel3, channel4 = channels
 
         # Block 1
-        # 1. First convolutional layer.
+        # 1.1 First convolutional layer.
         self.conv1 = nn.Conv2d(
             in_channels=1, out_channels=channel1, kernel_size=3, padding=1
         )
         self.bn1 = nn.BatchNorm2d(channel1)
         self.relu1 = nn.ReLU()
 
-        # 2. Second convolutional layer.
+        # 1.2 Second convolutional layer.
         self.conv2 = nn.Conv2d(channel1, channel2, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(channel2)
         self.relu2 = nn.ReLU()
@@ -77,13 +77,13 @@ class SimpleCNN(nn.Module):
         self.drop1 = nn.Dropout2d(0.1)
 
         # Block 2
-        # Third convolutional layer.
-        self.conv3 = nn.Conv2d(channel2, channel3, 3, padding=1)
+        # 2.1 Third convolutional layer.
+        self.conv3 = nn.Conv2d(channel2, channel3, kernel_size=3, padding=1)
         self.bn3 = nn.BatchNorm2d(channel3)
         self.relu3 = nn.ReLU()
 
-        # Fourth convolutional layer.
-        self.conv4 = nn.Conv2d(channel3, channel4, 3, padding=1)
+        # 2.2 Fourth convolutional layer.
+        self.conv4 = nn.Conv2d(channel3, channel4, kernel_size=3, padding=1)
         self.bn4 = nn.BatchNorm2d(channel4)
         self.relu4 = nn.ReLU()
 
@@ -91,14 +91,17 @@ class SimpleCNN(nn.Module):
         self.drop2 = nn.Dropout2d(0.1)
 
         # Block 3
+        # 3.1 Flatten data to one dimension
         self.flatten = nn.Flatten()
 
-        # 3. Fully connected layers (Dense / Linear).
+        # 3.2 Fully connected layers (Dense / Linear).
         self.fc1 = nn.Linear(channel4 * 7 * 7, 512)
         self.fc1_bn = nn.BatchNorm1d(512)
         self.fc1_relu = nn.ReLU()
-        self.fc1_drop = nn.Dropout(0.5)
 
+        self.fc1_drop = nn.Dropout(0.4)
+
+        # 3.3 Linear layer to outputs
         self.fc2 = nn.Linear(512, num_classes)
 
     def forward(self, x):
@@ -230,29 +233,35 @@ def model_from_checkpoint(content: dict) -> SimpleCNN:
 
 
 def custom_noise_erasing(img):
-    if torch.rand(1).item() > 0.1:  # Probabilidade p=0.1
+    if torch.rand(1).item() > 0.1:  # Probability p=0.1
         return img
 
-    # Calculate the crop parameters.
-    i, j, h, w, _ = v2.RandomErasing.get_params(
-        img, scale=(0.01, 0.2), ratio=(0.2, 2.2), value=[0]
-    )
+    _, h_img, w_img = img.shape
+    scale = torch.empty(1).uniform_(0.01, 0.2).item()
+    ratio = torch.empty(1).uniform_(0.2, 2.2).item()
+    
+    area = h_img * w_img * scale
+    h = round((area * ratio) ** 0.5)
+    w = round((area / ratio) ** 0.5)
+    
+    if h >= h_img or w >= w_img:
+        return img
+        
+    i = torch.randint(0, h_img - h + 1, (1,)).item()
+    j = torch.randint(0, w_img - w + 1, (1,)).item()
 
-    # Normalized values for black (0.0) and mid-gray (0.5).
-    val_black = (0.0 - MEAN) / STD  # ~ -0.424
-    val_gray = (0.5 - MEAN) / STD  # ~  1.200
+    val_black = (0.0 - MEAN) / STD
+    val_gray = (0.5 - MEAN) / STD
 
-    # Generate uniform noise between black and mid-gray.
-    noise = torch.empty(
-        (img.shape[0], h, w), dtype=img.dtype, device=img.device
-    ).uniform_(val_black, val_gray)
-
-    # Apply erasing with the v2 API.
-    return v2.functional.erase(img, i, j, h, w, noise)
+    noise = torch.empty((img.shape[0], h, w), dtype=img.dtype, device=img.device).uniform_(val_black, val_gray)
+    img[:, i:i+h, j:j+w] = noise
+    return img
 
 
 def fix_emnist_orientation(img):
-    return img.rotate(-90).transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    # return img.rotate(-90).transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    img = torch.rot90(img, k=-1, dims=(-2, -1))
+    return torch.flip(img, dims=[-1])
 
 
 def get_transformers():
@@ -263,12 +272,12 @@ def get_transformers():
     # along with custom noise erasing.
     return v2.Compose(
         [
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
             v2.Lambda(fix_emnist_orientation),
             v2.RandomAffine(
                 (-degrees, degrees), translate=(0.1, 0.1), scale=(0.8, 1.1)
             ),
-            v2.ToImage(),
-            v2.ToDtype(torch.float32, scale=True),
             v2.Normalize((MEAN,), (STD,)),
             v2.Lambda(custom_noise_erasing),
         ]
@@ -278,9 +287,9 @@ def get_transformers():
 def get_evaluation_transformers():
     return v2.Compose(
         [
-            v2.Lambda(fix_emnist_orientation),
             v2.ToImage(),
             v2.ToDtype(torch.float32, scale=True),
+            v2.Lambda(fix_emnist_orientation),
             v2.Normalize((MEAN,), (STD,)),
         ]
     )
