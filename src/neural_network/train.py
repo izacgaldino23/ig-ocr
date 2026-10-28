@@ -10,8 +10,11 @@ from src.neural_network.model import (
     COMPACT_CNN_ARCHITECTURE,
     COMPACT_CNN_CHANNELS,
     DEFAULT_CNN_CHANNELS,
+    MEAN,
     SIMPLE_CNN_ARCHITECTURE,
+    STD,
     SimpleCNN,
+    fix_emnist_orientation,
     get_emnist_dataset,
     get_gpu_augmentations,
     load_checkpoint_weights,
@@ -29,7 +32,10 @@ def main():
         torch.cuda.manual_seed_all(args.seed)
 
     # 2. Download and load the dataset.
-    train_dataset = get_emnist_dataset(True)
+    if args.gpu_uint8 and device.type != "cuda":
+        raise ValueError("--gpu-uint8 requires CUDA")
+
+    train_dataset = get_emnist_dataset(True, apply_transform=not args.gpu_uint8)
     print("2. Dataset loaded successfully!")
 
     # 3. Create a data loader to split the data into batches.
@@ -40,16 +46,40 @@ def main():
         default_workers = 4
     batch_size = args.batch_size or default_batch_size
     workers = args.workers if args.workers is not None else default_workers
-
-    train_loader = DataLoader(
-        train_dataset,
-        shuffle=True,
-        pin_memory=device.type == "cuda",
-        batch_size=batch_size,
-        num_workers=workers,
-        persistent_workers=workers > 0,
-    )
-    print(f"3. Loaded {len(train_loader)} batches successfully!")
+    training_images: torch.Tensor | None = None
+    training_labels: torch.Tensor | None = None
+    train_loader: DataLoader | None = None
+    if args.gpu_uint8:
+        if train_dataset.data.dtype != torch.uint8:
+            raise TypeError(
+                f"Expected raw EMNIST images as uint8, got {train_dataset.data.dtype}"
+            )
+        preload_start = time.perf_counter()
+        training_images = (
+            fix_emnist_orientation(train_dataset.data.to(device, non_blocking=True))
+            .unsqueeze(1)
+            .contiguous()
+        )
+        training_labels = train_dataset.targets.to(device, non_blocking=True)
+        torch.cuda.synchronize(device)
+        preload_duration = time.perf_counter() - preload_start
+        print(
+            f"3. Preloaded {len(train_dataset)} uint8 images on CUDA "
+            f"in {preload_duration:.2f}s."
+        )
+    else:
+        train_loader = DataLoader(
+            train_dataset,
+            shuffle=True,
+            pin_memory=device.type == "cuda",
+            batch_size=batch_size,
+            num_workers=workers,
+            persistent_workers=workers > 0,
+        )
+        print(f"3. Loaded {len(train_loader)} batches successfully!")
+    num_batches = (len(train_dataset) + batch_size - 1) // batch_size
+    if args.gpu_uint8:
+        print(f"3. Training will use {num_batches} batches per epoch.")
 
     # 4. Create the network.
     # model = SimpleNeuralNetwork(args.input)
@@ -127,14 +157,36 @@ def main():
                 profile_memory=True,
                 with_stack=True,
             )
-            if args.profile and epoch == 1
+            if args.profile
             else nullcontext()
         )
 
         with prof_context as prof:
-            for batch_idx, (images, labels) in enumerate(train_loader, 0):
-                images = images.to(device, non_blocking=True)
-                labels = labels.to(device, non_blocking=True)
+            if args.gpu_uint8:
+                if training_images is None or training_labels is None:
+                    raise RuntimeError("GPU uint8 dataset was not initialized")
+                indices = torch.randperm(len(train_dataset)).to(
+                    device, non_blocking=True
+                )
+                epoch_batches = (
+                    (
+                        training_images[indices[start : start + batch_size]],
+                        training_labels[indices[start : start + batch_size]],
+                    )
+                    for start in range(0, len(train_dataset), batch_size)
+                )
+            else:
+                if train_loader is None:
+                    raise RuntimeError("DataLoader was not initialized")
+                epoch_batches = iter(train_loader)
+
+            for batch_idx, (images, labels) in enumerate(epoch_batches):
+                if args.gpu_uint8:
+                    images = images.to(torch.float32).mul_(1.0 / 255.0)
+                    images.sub_(MEAN).div_(STD)
+                else:
+                    images = images.to(device, non_blocking=True)
+                    labels = labels.to(device, non_blocking=True)
 
                 if model.training:
                     images = gpu_transforms(images)
@@ -153,13 +205,13 @@ def main():
                 total += labels.size(0)
                 correct += (outputs.detach().argmax(dim=1) == labels).sum()
 
-                if batch_idx % 200 == 199 or batch_idx == len(train_loader) - 1:
+                if batch_idx % 200 == 199 or batch_idx == num_batches - 1:
                     avg_loss = running_loss.item() / batches_in_interval
                     accuracy = correct.item() / total
                     print(
                         f"[{datetime.now().strftime('%H:%M:%S')}] "
                         f"\t=> Epoch [{epoch + 1}/{epochs}], "
-                        f"Batch [{batch_idx + 1}/{len(train_loader)}], "
+                        f"Batch [{batch_idx + 1}/{num_batches}], "
                         f"Loss: {avg_loss:.4f}, "
                         f"Accuracy: {accuracy * 100:.2f}%"
                     )

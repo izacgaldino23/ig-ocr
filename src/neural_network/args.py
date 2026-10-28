@@ -18,6 +18,11 @@ def get_args():
         help="Data-loader worker count (defaults to 4 on CUDA and 1 on CPU)",
     )
     parser.add_argument(
+        "--gpu-uint8",
+        action="store_true",
+        help="Keep raw uint8 training images on CUDA and batch them there",
+    )
+    parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for repeatable comparisons"
     )
     parser.add_argument(

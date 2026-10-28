@@ -362,11 +362,13 @@ def get_gpu_augmentations():
     )
 
 
-def get_emnist_dataset(train: bool, download: bool = False):
+def get_emnist_dataset(
+    train: bool, download: bool = False, apply_transform: bool = True
+):
     return datasets.EMNIST(
         DATA_DIR,
         "byclass",
         train=train,
         download=download,
-        transform=get_transformers(),
+        transform=get_transformers() if apply_transform else None,
     )
