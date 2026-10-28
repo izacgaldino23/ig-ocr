@@ -357,7 +357,7 @@ def get_gpu_augmentations():
         [
             # v2.RandomAffine((-10, 10), translate=(0.1, 0.1), scale=(0.8, 1.1)),
             v2.Lambda(random_affine_batch),
-            v2.Lambda(custom_noise_erasing),
+            # v2.Lambda(custom_noise_erasing),
         ]
     )
 
