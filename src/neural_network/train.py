@@ -22,16 +22,7 @@ from src.neural_network.model import (
 from src.utils.paths import checkpoint_path
 
 
-def main():
-    torch.backends.cudnn.benchmark = True
-
-    # 1. Initialize configuration.
-    args, device = init_config()
-    torch.manual_seed(args.seed)
-    if device.type == "cuda":
-        torch.cuda.manual_seed_all(args.seed)
-
-    # 2. Download and load the dataset.
+def _prepare_training_data(args, device):
     if args.gpu_uint8 and device.type != "cuda":
         raise ValueError("--gpu-uint8 requires CUDA")
 
@@ -42,7 +33,7 @@ def main():
     default_batch_size = 64
     default_workers = 1
     if device.type == "cuda":
-        default_batch_size = 1024
+        default_batch_size = 1280
         default_workers = 4
     batch_size = args.batch_size or default_batch_size
     workers = args.workers if args.workers is not None else default_workers
@@ -80,9 +71,17 @@ def main():
     num_batches = (len(train_dataset) + batch_size - 1) // batch_size
     if args.gpu_uint8:
         print(f"3. Training will use {num_batches} batches per epoch.")
+    return (
+        train_dataset,
+        train_loader,
+        training_images,
+        training_labels,
+        batch_size,
+        num_batches,
+    )
 
-    # 4. Create the network.
-    # model = SimpleNeuralNetwork(args.input)
+
+def _create_model(args, train_dataset, device):
     channels = COMPACT_CNN_CHANNELS if args.compact else DEFAULT_CNN_CHANNELS
     architecture = COMPACT_CNN_ARCHITECTURE if args.compact else SIMPLE_CNN_ARCHITECTURE
     model = SimpleCNN(num_classes=len(train_dataset.classes), channels=channels)
@@ -107,142 +106,209 @@ def main():
     else:
         print("5. New model!")
 
-    model = model.to(device)
-    # 1. Count the number of images per class in the dataset.
-    # Use the PyTorch targets.
+    return model.to(device), architecture
+
+
+def _create_loss_and_optimizer(model, train_dataset, device):
     targets = train_dataset.targets.detach().clone()
     class_counts = torch.bincount(targets).float()
-
-    # 2. Calculate weights inversely proportional to each class frequency.
     class_weights = 1.0 / (class_counts + 1e-5)
     class_weights = torch.clamp(class_weights, max=100.0)
-
-    # Normalize the weights to prevent excessively large loss values.
     class_weights = class_weights / class_weights.mean()
-
-    # Move the weight tensor to the same GPU or CPU as the model.
     class_weights = class_weights.to(device)
-
     loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+    return loss_fn, optimizer
 
-    # Training loop.
+
+def _train_epoch(
+    args,
+    model,
+    train_dataset,
+    train_loader,
+    training_images,
+    training_labels,
+    batch_size,
+    loss_fn,
+    optimizer,
+    gpu_transforms,
+    device,
+    num_batches,
+    epoch,
+    epochs,
+):
+    epoch_start = time.perf_counter()
+    running_loss = torch.zeros((), device=device)
+    batches_in_interval = 0
+    total = 0
+    correct = torch.zeros((), device=device, dtype=torch.long)
+
+    prof_context = (
+        torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            schedule=torch.profiler.schedule(wait=2, warmup=2, active=5, repeat=1),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler("./log/profiler"),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+        )
+        if args.profile
+        else nullcontext()
+    )
+
+    with prof_context as prof:
+        if args.gpu_uint8:
+            if training_images is None or training_labels is None:
+                raise RuntimeError("GPU uint8 dataset was not initialized")
+            indices = torch.randperm(len(train_dataset)).to(device, non_blocking=True)
+            epoch_batches = (
+                (
+                    training_images[indices[start : start + batch_size]],
+                    training_labels[indices[start : start + batch_size]],
+                )
+                for start in range(0, len(train_dataset), batch_size)
+            )
+        else:
+            if train_loader is None:
+                raise RuntimeError("DataLoader was not initialized")
+            epoch_batches = iter(train_loader)
+
+        for batch_idx, (images, labels) in enumerate(epoch_batches):
+            if args.gpu_uint8:
+                images = images.to(torch.float32).mul_(1.0 / 255.0)
+                images.sub_(MEAN).div_(STD)
+            else:
+                images = images.to(device, non_blocking=True)
+                labels = labels.to(device, non_blocking=True)
+
+            if model.training:
+                images = gpu_transforms(images)
+
+            outputs = model(images)
+            loss = loss_fn(outputs, labels)
+
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+
+            running_loss += loss.detach()
+            batches_in_interval += 1
+            total += labels.size(0)
+            correct += (outputs.detach().argmax(dim=1) == labels).sum()
+
+            if batch_idx % 200 == 199 or batch_idx == num_batches - 1:
+                avg_loss = running_loss.item() / batches_in_interval
+                accuracy = correct.item() / total
+                print(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] "
+                    f"\t=> Epoch [{epoch + 1}/{epochs}], "
+                    f"Batch [{batch_idx + 1}/{num_batches}], "
+                    f"Loss: {avg_loss:.4f}, "
+                    f"Accuracy: {accuracy * 100:.2f}%"
+                )
+                running_loss.zero_()
+                batches_in_interval = 0
+                correct.zero_()
+                total = 0
+
+            if prof is not None:
+                prof.step()
+
+    epoch_duration = time.perf_counter() - epoch_start
+    print(
+        f"[{datetime.now().strftime('%H:%M:%S')}] -> Epoch {epoch + 1} finished in {epoch_duration:.2f}s"
+    )
+
+
+def _train(
+    args,
+    model,
+    train_dataset,
+    train_loader,
+    training_images,
+    training_labels,
+    batch_size,
+    num_batches,
+    loss_fn,
+    optimizer,
+    device,
+):
     epochs = 3
     print("6. Starting training...")
-
     start_total = time.perf_counter()
-
     gpu_transforms = get_gpu_augmentations().to(device)
 
     for epoch in range(epochs):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] -> Epoch {epoch + 1} started")
-
-        epoch_start = time.perf_counter()
-        running_loss = torch.zeros((), device=device)
-        batches_in_interval = 0
-        total = 0
-        correct = torch.zeros((), device=device, dtype=torch.long)
-
-        prof_context = (
-            torch.profiler.profile(
-                activities=[
-                    torch.profiler.ProfilerActivity.CPU,
-                    torch.profiler.ProfilerActivity.CUDA,
-                ],
-                schedule=torch.profiler.schedule(wait=2, warmup=2, active=5, repeat=1),
-                on_trace_ready=torch.profiler.tensorboard_trace_handler(
-                    "./log/profiler"
-                ),
-                record_shapes=True,
-                profile_memory=True,
-                with_stack=True,
-            )
-            if args.profile
-            else nullcontext()
-        )
-
-        with prof_context as prof:
-            if args.gpu_uint8:
-                if training_images is None or training_labels is None:
-                    raise RuntimeError("GPU uint8 dataset was not initialized")
-                indices = torch.randperm(len(train_dataset)).to(
-                    device, non_blocking=True
-                )
-                epoch_batches = (
-                    (
-                        training_images[indices[start : start + batch_size]],
-                        training_labels[indices[start : start + batch_size]],
-                    )
-                    for start in range(0, len(train_dataset), batch_size)
-                )
-            else:
-                if train_loader is None:
-                    raise RuntimeError("DataLoader was not initialized")
-                epoch_batches = iter(train_loader)
-
-            for batch_idx, (images, labels) in enumerate(epoch_batches):
-                if args.gpu_uint8:
-                    images = images.to(torch.float32).mul_(1.0 / 255.0)
-                    images.sub_(MEAN).div_(STD)
-                else:
-                    images = images.to(device, non_blocking=True)
-                    labels = labels.to(device, non_blocking=True)
-
-                if model.training:
-                    images = gpu_transforms(images)
-
-                outputs = model(images)
-                loss = loss_fn(outputs, labels)
-
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad(set_to_none=True)
-
-                running_loss += loss.detach()
-                batches_in_interval += 1
-
-                # Calculate accuracy.
-                total += labels.size(0)
-                correct += (outputs.detach().argmax(dim=1) == labels).sum()
-
-                if batch_idx % 200 == 199 or batch_idx == num_batches - 1:
-                    avg_loss = running_loss.item() / batches_in_interval
-                    accuracy = correct.item() / total
-                    print(
-                        f"[{datetime.now().strftime('%H:%M:%S')}] "
-                        f"\t=> Epoch [{epoch + 1}/{epochs}], "
-                        f"Batch [{batch_idx + 1}/{num_batches}], "
-                        f"Loss: {avg_loss:.4f}, "
-                        f"Accuracy: {accuracy * 100:.2f}%"
-                    )
-                    # Reset the interval counters.
-                    running_loss.zero_()
-                    batches_in_interval = 0
-                    correct.zero_()
-                    total = 0
-
-                if prof is not None:
-                    prof.step()
-
-        epoch_duration = time.perf_counter() - epoch_start
-        print(
-            f"[{datetime.now().strftime('%H:%M:%S')}] -> Epoch {epoch + 1} finished in {epoch_duration:.2f}s"
+        _train_epoch(
+            args,
+            model,
+            train_dataset,
+            train_loader,
+            training_images,
+            training_labels,
+            batch_size,
+            loss_fn,
+            optimizer,
+            gpu_transforms,
+            device,
+            num_batches,
+            epoch,
+            epochs,
         )
 
     total_duration = time.perf_counter() - start_total
     print(f"7. Training completed in {total_duration:.2f}s!")
 
-    if args.output != 0:
-        file = checkpoint_path(args.output)
 
+def _save_checkpoint(model, classes, architecture, args):
+    file = checkpoint_path(args.output if args.output != 0 else args.input)
     file.parent.mkdir(parents=True, exist_ok=True)
-    content = {
-        "model": model.state_dict(),
-        "classes": train_dataset.classes,
-        "architecture": architecture,
-    }
-    torch.save(content, file)
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "classes": classes,
+            "architecture": architecture,
+        },
+        file,
+    )
     print(f"8. Model saved successfully to {file}!")
+
+
+def main():
+    torch.backends.cudnn.benchmark = True
+    args, device = init_config()
+    torch.manual_seed(args.seed)
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(args.seed)
+
+    (
+        train_dataset,
+        train_loader,
+        training_images,
+        training_labels,
+        batch_size,
+        num_batches,
+    ) = _prepare_training_data(args, device)
+    model, architecture = _create_model(args, train_dataset, device)
+    loss_fn, optimizer = _create_loss_and_optimizer(model, train_dataset, device)
+    _train(
+        args,
+        model,
+        train_dataset,
+        train_loader,
+        training_images,
+        training_labels,
+        batch_size,
+        num_batches,
+        loss_fn,
+        optimizer,
+        device,
+    )
+    _save_checkpoint(model, train_dataset.classes, architecture, args)
 
 
 if __name__ == "__main__":

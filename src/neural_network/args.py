@@ -20,7 +20,7 @@ def get_args():
     parser.add_argument(
         "--gpu-uint8",
         action="store_true",
-        help="Keep raw uint8 training images on CUDA and batch them there",
+        help="Keep raw uint8 images on CUDA and batch them there (requires CUDA)",
     )
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for repeatable comparisons"
