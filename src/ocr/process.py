@@ -64,8 +64,8 @@ def remove_debug_images():
 
 
 def pos_processing_letter(line: Line, box: Box, char: str):
-    tresshold = line.bbox.h * 0.05
-    if abs(box.y - line.bbox.y) > tresshold and str.isupper:
+    threshold = line.bbox.h * 0.05
+    if abs(box.y - line.bbox.y) > threshold and char.isupper():
         return char.lower()
 
     return char
@@ -115,6 +115,10 @@ if __name__ == "__main__":
 
             with torch.no_grad():
                 output = model(input_tensor)
+
+                logits = output[0]
+                probs = torch.softmax(logits, dim=0)
+
                 _, pred = torch.max(output, 1)
                 char = class_names[int(pred.item())]
 
@@ -135,7 +139,18 @@ if __name__ == "__main__":
                 if char != expected_char:
                     # Save the 28x28 ROI image for a misclassified character.
                     name = f"{idx + 1}_exp_{expected_char}_got_{char}"
-                    print(name)
+                    probs_list = [
+                        (class_names[i], round(float(probs[i] * 100), 2))
+                        for i in probs.topk(5).indices
+                    ]
+                    probs_list = sorted(
+                        probs_list, key=lambda item: item[1], reverse=True
+                    )
+
+                    print(
+                        name,
+                        probs_list,
+                    )
                     filename = f"{DEBUG_FOLDER}/{name}.png"
                     cv2.imwrite(filename, resized)
 
