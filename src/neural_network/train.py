@@ -236,7 +236,7 @@ def _train(
     optimizer,
     device,
 ):
-    epochs = 3
+    epochs = 10
     print("6. Starting training...")
     start_total = time.perf_counter()
     gpu_transforms = get_gpu_augmentations().to(device)

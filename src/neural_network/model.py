@@ -44,8 +44,8 @@ class SimpleNeuralNetwork(nn.Module):
         return x
 
 
-DEFAULT_CNN_CHANNELS = (32, 32, 64, 64)
-COMPACT_CNN_CHANNELS = (28, 56, 112, 112)
+DEFAULT_CNN_CHANNELS = (32, 64, 128, 128)
+COMPACT_CNN_CHANNELS = (24, 48, 96, 96)
 SIMPLE_CNN_ARCHITECTURE = "simple_cnn_v1"
 COMPACT_CNN_ARCHITECTURE = "simple_cnn_compact_v1"
 
