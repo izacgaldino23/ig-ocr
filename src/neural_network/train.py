@@ -78,11 +78,6 @@ def main():
         print("5. New model!")
 
     model = model.to(device)
-    use_amp = args.amp and device.type == "cuda"
-    if args.amp and not use_amp:
-        print("CUDA AMP requested, but CUDA is unavailable; using FP32.")
-    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
-
     # 1. Count the number of images per class in the dataset.
     # Use the PyTorch targets.
     targets = train_dataset.targets.detach().clone()
@@ -144,17 +139,11 @@ def main():
                 if model.training:
                     images = gpu_transforms(images)
 
-                with torch.autocast(
-                    device_type=device.type,
-                    dtype=torch.float16,
-                    enabled=use_amp,
-                ):
-                    outputs = model(images)
-                    loss = loss_fn(outputs, labels)
+                outputs = model(images)
+                loss = loss_fn(outputs, labels)
 
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
+                loss.backward()
+                optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
 
                 running_loss += loss.detach()

@@ -70,12 +70,13 @@ class SimpleCNN(nn.Module):
         self.bn1 = nn.BatchNorm2d(channel1)
         self.relu1 = nn.ReLU()
 
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+
         # 1.2 Second convolutional layer.
         self.conv2 = nn.Conv2d(channel1, channel2, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(channel2)
         self.relu2 = nn.ReLU()
 
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.drop1 = nn.Dropout2d(0.1)
 
         # Block 2
@@ -84,12 +85,13 @@ class SimpleCNN(nn.Module):
         self.bn3 = nn.BatchNorm2d(channel3)
         self.relu3 = nn.ReLU()
 
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+
         # 2.2 Fourth convolutional layer.
         self.conv4 = nn.Conv2d(channel3, channel4, kernel_size=3, padding=1)
         self.bn4 = nn.BatchNorm2d(channel4)
         self.relu4 = nn.ReLU()
 
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.drop2 = nn.Dropout2d(0.1)
 
         # Block 3
@@ -108,12 +110,12 @@ class SimpleCNN(nn.Module):
 
     def forward(self, x):
         # Block 1
-        x = self.relu1(self.bn1(self.conv1(x)))
-        x = self.drop1(self.pool1(self.relu2(self.bn2(self.conv2(x)))))
+        x = self.pool1(self.relu1(self.bn1(self.conv1(x))))
+        x = self.drop1(self.relu2(self.bn2(self.conv2(x))))
 
         # Block 2
-        x = self.relu3(self.bn3(self.conv3(x)))
-        x = self.drop2(self.pool2(self.relu4(self.bn4(self.conv4(x)))))
+        x = self.pool2(self.relu3(self.bn3(self.conv3(x))))
+        x = self.drop2(self.relu4(self.bn4(self.conv4(x))))
 
         # Final classification.
         x = self.flatten(x)

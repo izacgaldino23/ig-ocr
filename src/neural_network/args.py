@@ -26,11 +26,6 @@ def get_args():
         help="Train the reduced-channel CNN variant",
     )
     parser.add_argument(
-        "--amp",
-        action="store_true",
-        help="Use CUDA automatic mixed precision (FP16) with gradient scaling",
-    )
-    parser.add_argument(
         "--profile",
         action="store_true",
         help="Profile five batches in the second epoch",
