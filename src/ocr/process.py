@@ -21,6 +21,7 @@ def process_roi(
     if rotate:
         roi = cv2.transpose(roi)
 
+    # _, roi = cv2.threshold(roi, 127, 255, cv2.THRESH_BINARY)
     h, w = roi.shape
 
     # get the bigger side
@@ -39,7 +40,10 @@ def process_roi(
     square_img[y_offset : y_offset + h, x_offset : x_offset + w] = roi
 
     # resize to 28x28, EMINIST default size
-    resized = cv2.resize(square_img, (28, 28), interpolation=cv2.INTER_AREA)
+    resized_24x24 = cv2.resize(square_img, (24, 24), interpolation=cv2.INTER_AREA)
+    padded_28x28 = np.zeros((28, 28), dtype=np.uint8)
+    padded_28x28[2:26, 2:26] = resized_24x24
+    resized = padded_28x28
 
     # convert to tensor pytorch and normalize (0 to 1)
     tensor_img = torch.from_numpy(resized).float() / 255.0
@@ -49,9 +53,6 @@ def process_roi(
 
     # identical normalization with the training
     tensor_img = (tensor_img - MEAN) / STD
-
-    # if printout:
-    #     cv2.imwrite("debug_roi_28x28.png", resized)
 
     return resized, tensor_img
 
@@ -71,14 +72,33 @@ def pos_processing_letter(line: Line, box: Box, char: str):
     return char
 
 
+def box_features(line: Line, box: Box) -> dict[str, float]:
+    line_height = max(line.baseline - line.bbox.y, 1)
+    return {
+        "height_ratio": box.h / line_height,
+        "width_height_ratio": round(box.w / max(box.h, 1), 2),
+        "top_offset_ratio": (box.y - line.bbox.y) / line_height,
+        "baseline_offset_ratio": (line.baseline - (box.y + box.h)) / line_height,
+    }
+
+
 if __name__ == "__main__":
     os.makedirs(DEBUG_FOLDER, exist_ok=True)
     remove_debug_images()
 
-    img, lines = character_segmentation("9800")
-    original_text = (
-        "Lorem Ipsum is simply dummy text of the printing and typesetting industry"
-    )
+    images = [
+        [
+            "9800",
+            "Lorem Ipsum is simply dummy text of the printing and typesetting industry",
+        ],
+        ["6771", "Fifi found five fluffy foxes beside the little mill"],
+        ["9515", "I like Lily and Mimi who use 10 old maps while Oliver and Sam read"],
+    ]
+    current_index = 0
+    image_name = images[current_index][0]
+    original_text = images[current_index][1]
+
+    img, lines = character_segmentation(image_name)
     predicted_text = ""
 
     args, device = init_config(True)
@@ -94,6 +114,7 @@ if __name__ == "__main__":
     new_line = False
 
     results = {"correct": 0, "case_swap": 0, "number_swap": 0, "wrong_char": 0}
+    similar = "fFlIi0Oo"
 
     for line in lines:
         curr_x = -1
@@ -120,7 +141,8 @@ if __name__ == "__main__":
                 probs = torch.softmax(logits, dim=0)
 
                 _, pred = torch.max(output, 1)
-                char = class_names[int(pred.item())]
+                model_char = class_names[int(pred.item())]
+                char = model_char
 
                 char = pos_processing_letter(line, box, char)
                 predicted_text += char
@@ -136,23 +158,30 @@ if __name__ == "__main__":
                 else:
                     results["wrong_char"] += 1
 
+                top_candidates = [
+                    (class_names[i], round(float(probs[i] * 100), 2))
+                    for i in probs.topk(min(5, probs.numel())).indices
+                ]
+
                 if char != expected_char:
                     # Save the 28x28 ROI image for a misclassified character.
-                    name = f"{idx + 1}_exp_{expected_char}_got_{char}"
-                    probs_list = [
-                        (class_names[i], round(float(probs[i] * 100), 2))
-                        for i in probs.topk(5).indices
-                    ]
-                    probs_list = sorted(
-                        probs_list, key=lambda item: item[1], reverse=True
-                    )
-
+                    name = f"{idx + 1}_expe_{expected_char}_got_{char}"
                     print(
                         name,
-                        probs_list,
+                        f"model={model_char}",
+                        # f"geometry={box_features(line, box)}",
+                        top_candidates,
                     )
                     filename = f"{DEBUG_FOLDER}/{name}.png"
                     cv2.imwrite(filename, resized)
+                elif model_char in similar:
+                    print(
+                        "SIMILAR",
+                        f"model={model_char}",
+                        f"pospr={char}",
+                        # f"geometry={box_features(line, box)}",
+                        top_candidates,
+                    )
 
         new_line = True
 
