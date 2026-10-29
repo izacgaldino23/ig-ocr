@@ -3,8 +3,12 @@ import argparse
 
 def get_args():
     parser = argparse.ArgumentParser(description="Neural network training")
-    parser.add_argument("-i", "--input", type=float, default=0, help="Input model number")
-    parser.add_argument("-o", "--output", type=float, default=0, help="Output model number")
+    parser.add_argument(
+        "-i", "--input", type=float, default=0, help="Input model number"
+    )
+    parser.add_argument(
+        "-o", "--output", type=float, default=0, help="Output model number"
+    )
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -34,6 +38,11 @@ def get_args():
         "--profile",
         action="store_true",
         help="Profile five batches in the second epoch",
+    )
+    parser.add_argument(
+        "--fine-tune",
+        action="store_true",
+        help="Changes the dataset to char74k for fine tune",
     )
     args = parser.parse_args()
     if args.batch_size is not None and args.batch_size < 1:

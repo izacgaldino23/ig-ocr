@@ -1,10 +1,17 @@
 import math
+import os
+import string
+from pathlib import Path
+from typing import Any
 
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.utils.data import Dataset
 from torchvision import datasets
+from torchvision.datasets.mnist import read_image_file, read_label_file
 from torchvision.transforms import v2
+from torchvision.utils import _Image_fromarray
 
 from src.utils.paths import DATA_DIR
 
@@ -371,4 +378,53 @@ def get_emnist_dataset(
         train=train,
         download=download,
         transform=get_transformers() if apply_transform else None,
+    )
+
+
+def get_chars74k_dataset(apply_transform: bool = True):
+    transform = get_transformers() if apply_transform else None
+    return Chars74KFontDataset(data_dir=DATA_DIR, transform=transform)
+
+
+class Chars74KFontDataset(Dataset):
+    def __init__(self, data_dir: Path, transform=None):
+        self.processed_dir = data_dir / "processed_chars74k"
+        self.transform = transform
+
+        images_file = os.path.join(self.processed_dir, "chars74k-fnt-images-idx3-ubyte")
+        labels_file = os.path.join(self.processed_dir, "chars74k-fnt-labels-idx1-ubyte")
+        self.classes = string.digits + string.ascii_uppercase + string.ascii_lowercase
+
+        if not (os.path.exists(images_file) and os.path.exists(labels_file)):
+            raise FileNotFoundError(
+                f"IDX files not found in {self.processed_dir}. "
+                "Run 'process_and_save_chars74k()' first."
+            )
+
+        # Load binary files into memory (returns torch.uint8 Tensors)
+        self.data: torch.Tensor = read_image_file(images_file)  # Shape: [N, 28, 28]
+        self.targets: torch.Tensor = read_label_file(labels_file)  # Shape: [N]
+
+    def __len__(self) -> int:
+        return len(self.targets)
+
+    def __getitem__(self, idx: int) -> tuple[Any, int]:
+        img, target = self.data[idx], int(self.targets[idx])
+
+        img = _Image_fromarray(img.numpy(), mode="L")
+
+        if self.transform is not None:
+            img = self.transform(img)
+
+        return img, target
+
+
+def get_chars74k_transformers():
+    return v2.Compose(
+        [
+            # v2.RandomInvert(p=1.0),
+            # v2.Resize((28, 28)),
+            # v2.ToTensor(),
+            v2.Normalize((MEAN,), (STD,)),
+        ]
     )

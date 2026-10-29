@@ -15,12 +15,7 @@ from src.utils.paths import DEBUG_FOLDER, checkpoint_path
 # stabilize it and return a 28x28 tensor
 # ready for EMINIST Neural Network processing
 # ROI means Region Of Interest
-def process_roi(
-    roi: np.ndarray, rotate: bool = False, printout=False
-) -> tuple[MatLike, torch.Tensor]:
-    if rotate:
-        roi = cv2.transpose(roi)
-
+def process_roi(roi: np.ndarray) -> tuple[MatLike, torch.Tensor]:
     # _, roi = cv2.threshold(roi, 127, 255, cv2.THRESH_BINARY)
     h, w = roi.shape
 
@@ -94,7 +89,7 @@ if __name__ == "__main__":
         ["6771", "Fifi found five fluffy foxes beside the little mill"],
         ["9515", "I like Lily and Mimi who use 10 old maps while Oliver and Sam read"],
     ]
-    current_index = 0
+    current_index = 2
     image_name = images[current_index][0]
     original_text = images[current_index][1]
 
@@ -174,14 +169,13 @@ if __name__ == "__main__":
                     )
                     filename = f"{DEBUG_FOLDER}/{name}.png"
                     cv2.imwrite(filename, resized)
-                elif model_char in similar:
-                    print(
-                        "SIMILAR",
-                        f"model={model_char}",
-                        f"pospr={char}",
-                        # f"geometry={box_features(line, box)}",
-                        top_candidates,
-                    )
+                # elif model_char in similar:
+                #     print(
+                #         "SIMILAR",
+                #         f"model={model_char}",
+                #         f"pospr={char}",
+                #         top_candidates,
+                #     )
 
         new_line = True
 

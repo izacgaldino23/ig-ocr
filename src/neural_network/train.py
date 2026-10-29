@@ -3,7 +3,7 @@ from contextlib import nullcontext
 from datetime import datetime
 
 import torch
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import ConcatDataset, DataLoader, Subset
 
 from src.neural_network.config import init_config
 from src.neural_network.model import (
@@ -15,6 +15,7 @@ from src.neural_network.model import (
     STD,
     SimpleCNN,
     fix_emnist_orientation,
+    get_chars74k_dataset,
     get_emnist_dataset,
     get_gpu_augmentations,
     load_checkpoint_weights,
@@ -47,10 +48,20 @@ def _prepare_training_data(args, device):
     if args.gpu_uint8 and device.type != "cuda":
         raise ValueError("--gpu-uint8 requires CUDA")
 
-    train_dataset = get_emnist_dataset(True, apply_transform=not args.gpu_uint8)
-    print("2. Dataset loaded successfully!")
+    fine_tuning = args.fine_tune is not None
+
+    # if fine_tuning:
+    #     train_dataset = get_chars74k_dataset()
+    # else:
+    #     train_dataset = get_emnist_dataset(True, apply_transform=not args.gpu_uint8)
+    emnist_dataset = get_emnist_dataset(True, apply_transform=not args.gpu_uint8)
+    chars74k_dataset = get_chars74k_dataset(True)
+    train_dataset = ConcatDataset([emnist_dataset, chars74k_dataset])
+    print(
+        f"2. Dataset loaded successfully! Using {'emnist' if not fine_tuning else 'chars74k'}"
+    )
     train_indices, validation_indices = _stratified_split(
-        train_dataset.targets, args.seed
+        _get_dataset_targets(train_dataset), args.seed
     )
 
     # 3. Create a data loader to split the data into batches.
@@ -68,17 +79,21 @@ def _prepare_training_data(args, device):
     train_loader: DataLoader | None = None
     validation_loader: DataLoader | None = None
     if args.gpu_uint8:
-        if train_dataset.data.dtype != torch.uint8:
+        if _get_dataset_data(train_dataset).dtype != torch.uint8:
             raise TypeError(
-                f"Expected raw EMNIST images as uint8, got {train_dataset.data.dtype}"
+                f"Expected raw EMNIST images as uint8, got {_get_dataset_data(train_dataset).dtype}"
             )
         preload_start = time.perf_counter()
         training_images = (
-            fix_emnist_orientation(train_dataset.data.to(device, non_blocking=True))
+            fix_emnist_orientation(
+                _get_dataset_data(train_dataset).to(device, non_blocking=True)
+            )
             .unsqueeze(1)
             .contiguous()
         )
-        training_labels = train_dataset.targets.to(device, non_blocking=True)
+        training_labels = _get_dataset_targets(train_dataset).to(
+            device, non_blocking=True
+        )
         train_indices_device = train_indices.to(device, non_blocking=True)
         validation_indices_device = validation_indices.to(device, non_blocking=True)
         torch.cuda.synchronize(device)
@@ -135,14 +150,19 @@ def _prepare_training_data(args, device):
 def _create_model(args, train_dataset, device):
     channels = COMPACT_CNN_CHANNELS if args.compact else DEFAULT_CNN_CHANNELS
     architecture = COMPACT_CNN_ARCHITECTURE if args.compact else SIMPLE_CNN_ARCHITECTURE
-    model = SimpleCNN(num_classes=len(train_dataset.classes), channels=channels)
+    model = SimpleCNN(
+        num_classes=len(_get_dataset_classes(train_dataset)), channels=channels
+    )
     file = checkpoint_path(args.input)
     print("4. Network created successfully!")
 
     if file.exists():
         content = torch.load(file)
         if load_checkpoint_weights(
-            model, content["model"], content["classes"], train_dataset.classes
+            model,
+            content["model"],
+            content["classes"],
+            _get_dataset_classes(train_dataset),
         ):
             print(
                 "5. Compatible weights loaded; new classes will be trained from scratch."
@@ -160,7 +180,7 @@ def _create_model(args, train_dataset, device):
     return model.to(device), architecture
 
 
-def _create_loss_and_optimizer(model, train_targets, device):
+def _create_loss_and_optimizer(model, train_targets, device, is_fine_tuning):
     targets = train_targets.detach().clone()
     class_counts = torch.bincount(targets).float()
     class_weights = 1.0 / (class_counts + 1e-5)
@@ -168,7 +188,9 @@ def _create_loss_and_optimizer(model, train_targets, device):
     class_weights = class_weights / class_weights.mean()
     class_weights = class_weights.to(device)
     loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=1e-5 if is_fine_tuning else 0.001, weight_decay=1e-4
+    )
     return loss_fn, optimizer
 
 
@@ -357,24 +379,25 @@ def _validate(
     #         f"  {class_names[index]}: {class_accuracy[index]:.4f} "
     #         f"[{class_correct[index]} of {class_totals[index]}]"
     #     )
-    off_diagonal = confusion.clone()
-    off_diagonal.fill_diagonal_(0)
-    top_confusions = torch.topk(off_diagonal.flatten(), k=min(7, off_diagonal.numel()))
-    confusions = [
-        (
-            class_names[index // len(class_names)],
-            class_names[index % len(class_names)],
-            int(count),
-        )
-        for index, count in zip(
-            top_confusions.indices.tolist(), top_confusions.values.tolist()
-        )
-        if count > 0
-    ]
-    if confusions:
-        print("Most common validation confusions (actual -> predicted):")
-        for actual, predicted, count in confusions:
-            print(f"  {actual} -> {predicted}: {count}")
+    # ======
+    # off_diagonal = confusion.clone()
+    # off_diagonal.fill_diagonal_(0)
+    # top_confusions = torch.topk(off_diagonal.flatten(), k=min(7, off_diagonal.numel()))
+    # confusions = [
+    #     (
+    #         class_names[index // len(class_names)],
+    #         class_names[index % len(class_names)],
+    #         int(count),
+    #     )
+    #     for index, count in zip(
+    #         top_confusions.indices.tolist(), top_confusions.values.tolist()
+    #     )
+    #     if count > 0
+    # ]
+    # if confusions:
+    #     print("Most common validation confusions (actual -> predicted):")
+    #     for actual, predicted, count in confusions:
+    #         print(f"  {actual} -> {predicted}: {count}")
     return validation_loss, accuracy, macro_accuracy
 
 
@@ -426,7 +449,7 @@ def _train(
             validation_indices,
             batch_size,
             loss_fn,
-            train_dataset.classes,
+            _get_dataset_classes(train_dataset),
             device,
         )
         model.train()
@@ -464,6 +487,18 @@ def _save_checkpoint(model, classes, architecture, args):
     print(f"8. Model saved successfully to {file}!")
 
 
+def _get_dataset_targets(combined_dataset):
+    return torch.cat([d.targets for d in combined_dataset.datasets])
+
+
+def _get_dataset_data(combined_dataset):
+    return torch.cat([d.data for d in combined_dataset.datasets])
+
+
+def _get_dataset_classes(combined_dataset):
+    return combined_dataset.datasets[0].classes
+
+
 def main():
     torch.backends.cudnn.benchmark = True
     args, device = init_config()
@@ -485,7 +520,10 @@ def main():
     ) = _prepare_training_data(args, device)
     model, architecture = _create_model(args, train_dataset, device)
     loss_fn, optimizer = _create_loss_and_optimizer(
-        model, train_dataset.targets[train_indices], device
+        model,
+        _get_dataset_targets(train_dataset)[train_indices],
+        device,
+        args.fine_tune,
     )
     _train(
         args,
@@ -503,7 +541,7 @@ def main():
         optimizer,
         device,
     )
-    _save_checkpoint(model, train_dataset.classes, architecture, args)
+    _save_checkpoint(model, _get_dataset_classes(train_dataset), architecture, args)
 
 
 if __name__ == "__main__":
