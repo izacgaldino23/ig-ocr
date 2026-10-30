@@ -87,7 +87,7 @@ def main():
         raise ValueError("--gpu-uint8 requires CUDA")
 
     # test_dataset = get_emnist_dataset(False, True)
-    test_dataset = get_chars74k_dataset(True)
+    test_dataset = get_chars74k_dataset(not args.gpu_uint8)
     print("Dataset loaded successfully!")
 
     # img = test_dataset.data[5000]

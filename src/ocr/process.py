@@ -90,7 +90,7 @@ if __name__ == "__main__":
         ["9515", "I like Lily and Mimi who use 10 old maps while Oliver and Sam read"],
         ["1334", "I like Lily and Mimi who use 10 old maps while Oliver and Sam read"],
     ]
-    current_index = 3
+    current_index = 2
     image_name = images[current_index][0]
     original_text = images[current_index][1]
 

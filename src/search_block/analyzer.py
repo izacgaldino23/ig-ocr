@@ -175,7 +175,7 @@ def sort_boxes_by_line(boxes: list[Box], tolerance=25) -> list[Line]:
 
 
 if __name__ == "__main__":
-    image_name = "9800"
+    image_name = "1334"
     img, lines = character_segmentation(image_name)
     # cv2.imwrite(f"{test_image_path(image_name)}-dilatted.png", img)
     for line in lines:
