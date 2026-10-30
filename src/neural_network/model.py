@@ -249,7 +249,7 @@ def random_affine_batch(img):
     batch_size, _, height, width = images.shape
     device = images.device
 
-    angle = torch.empty(batch_size, device=device).uniform_(-10.0, 10.0)
+    angle = torch.empty(batch_size, device=device).uniform_(-15, 15)
     scale = torch.empty(batch_size, device=device).uniform_(0.8, 1.1)
     translate_x = (
         torch.empty(batch_size, device=device)
@@ -347,8 +347,6 @@ def fix_emnist_orientation(img):
 
 def get_transformers():
     # Convert images to tensors and normalize them.
-    # Also apply random translation, rotation, and scaling,
-    # along with custom noise erasing.
     return v2.Compose(
         [
             v2.ToImage(),
@@ -364,6 +362,8 @@ def get_gpu_augmentations():
         [
             # v2.RandomAffine((-10, 10), translate=(0.1, 0.1), scale=(0.8, 1.1)),
             v2.Lambda(random_affine_batch),
+            v2.ElasticTransform(alpha=50.0, sigma=5.0),
+            # v2.GaussianBlur(kernel_size=(3, 3), sigma=(0.1, 2.0)),
             # v2.Lambda(custom_noise_erasing),
         ]
     )
@@ -382,7 +382,7 @@ def get_emnist_dataset(
 
 
 def get_chars74k_dataset(apply_transform: bool = True):
-    transform = get_transformers() if apply_transform else None
+    transform = get_chars74k_transformers() if apply_transform else None
     return Chars74KFontDataset(data_dir=DATA_DIR, transform=transform)
 
 
@@ -422,9 +422,11 @@ class Chars74KFontDataset(Dataset):
 def get_chars74k_transformers():
     return v2.Compose(
         [
-            # v2.RandomInvert(p=1.0),
-            # v2.Resize((28, 28)),
-            # v2.ToTensor(),
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Lambda(fix_emnist_orientation),
+            # v2.Resize([26, 26]),
+            # v2.Pad(1, 0.0),
             v2.Normalize((MEAN,), (STD,)),
         ]
     )

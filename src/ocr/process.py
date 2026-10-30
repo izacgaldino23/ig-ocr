@@ -88,8 +88,9 @@ if __name__ == "__main__":
         ],
         ["6771", "Fifi found five fluffy foxes beside the little mill"],
         ["9515", "I like Lily and Mimi who use 10 old maps while Oliver and Sam read"],
+        ["1334", "I like Lily and Mimi who use 10 old maps while Oliver and Sam read"],
     ]
-    current_index = 2
+    current_index = 3
     image_name = images[current_index][0]
     original_text = images[current_index][1]
 
@@ -160,7 +161,7 @@ if __name__ == "__main__":
 
                 if char != expected_char:
                     # Save the 28x28 ROI image for a misclassified character.
-                    name = f"{idx + 1}_expe_{expected_char}_got_{char}"
+                    name = f"{idx + 1}_exp_{expected_char}_got_{char}"
                     print(
                         name,
                         f"model={model_char}",

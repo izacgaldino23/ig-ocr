@@ -44,16 +44,18 @@ def generate_test_image(text: str):
 
     # try to load a system font
     font_size = random.randint(10, 25)
-    font_path = _find_shantell_font()
-    if font_path is None:
-        font = ImageFont.load_default()
-        print("Shantell Sans font file not found; using the default font.")
-    else:
-        try:
-            font = ImageFont.truetype(str(font_path), size=font_size)
-        except OSError as error:
-            font = ImageFont.load_default()
-            print(f"Could not load Shantell Sans from {font_path}: {error}")
+    # font_path = _find_shantell_font()
+    # font_path = "Arial.ttf"
+    # if font_path is None:
+    #     font = ImageFont.load_default()
+    #     print("Shantell Sans font file not found; using the default font.")
+    # else:
+    #     try:
+    #         font = ImageFont.truetype(str(font_path), size=font_size)
+    #     except OSError as error:
+    #         font = ImageFont.load_default()
+    #         print(f"Could not load Shantell Sans from {font_path}: {error}")
+    font = ImageFont.truetype("arial.ttf", size=font_size)
 
     clue = []
 
@@ -124,8 +126,10 @@ def generate_test_image(text: str):
 
 if __name__ == "__main__":
     # Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since 1966, when designers at Letraset and James Mosley, the librarian at St Bride Printing Library in London, took a 1914 Cicero translation and scrambled it to make dummy text for Letraset's Body Type sheets. It has survived not only many decades, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised thanks to these sheets and more recently with desktop publishing software like Aldus PageMaker and Microsoft Word including versions of Lorem Ipsum.
-    generate_test_image(
-        # "Lorem Ipsum is simply dummy text of the printing and typesetting industry"
-        # "Fifi found five fluffy foxes beside the little mill"
-        "I like Lily and Mimi who use 10 old maps while Oliver and Sam read"
+    print(
+        generate_test_image(
+            # "Lorem Ipsum is simply dummy text of the printing and typesetting industry"
+            # "Fifi found five fluffy foxes beside the little mill"
+            "I like Lily and Mimi who use 10 old maps while Oliver and Sam read"
+        )
     )

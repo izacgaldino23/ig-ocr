@@ -1,17 +1,22 @@
 import time
 
 import torch
+from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
+from torchvision.transforms import v2
+from torchvision.transforms.v2.functional import to_dtype
+from torchvision.utils import save_image
 
 from src.neural_network.config import init_config
 from src.neural_network.model import (
     MEAN,
     STD,
     fix_emnist_orientation,
+    get_chars74k_dataset,
     get_emnist_dataset,
     model_from_checkpoint,
 )
-from src.utils.paths import checkpoint_path
+from src.utils.paths import PROJECT_ROOT, checkpoint_path
 
 
 def _gpu_uint8_batches(test_dataset, batch_size, device):
@@ -48,16 +53,16 @@ def _evaluate(model, test_loader, class_names, device):
     )
 
     with torch.inference_mode():
-        for images, labels in test_loader:
-            images = images.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
+        for image, label in test_loader:
+            image = image.to(device, non_blocking=True)
+            label = label.to(device, non_blocking=True)
 
-            outputs = model(images)
+            outputs = model(image)
             predicted = outputs.argmax(dim=1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum()
+            total += label.size(0)
+            correct += (predicted == label).sum()
             batch_confusion = torch.bincount(
-                labels * len(class_names) + predicted,
+                label * len(class_names) + predicted,
                 minlength=len(class_names) ** 2,
             ).reshape(len(class_names), len(class_names))
             confusion += batch_confusion
@@ -81,8 +86,19 @@ def main():
     if args.gpu_uint8 and device.type != "cuda":
         raise ValueError("--gpu-uint8 requires CUDA")
 
-    test_dataset = get_emnist_dataset(False, apply_transform=not args.gpu_uint8)
+    # test_dataset = get_emnist_dataset(False, True)
+    test_dataset = get_chars74k_dataset(True)
     print("Dataset loaded successfully!")
+
+    # img = test_dataset.data[5000]
+    # img_display = img.squeeze(0) * STD + MEAN
+
+    # img = v2.functional.to_pil_image(img_display)
+    # img.save(PROJECT_ROOT / "data" / "imagem_emnist.png")
+    # print(test_dataset.targets[5000].item())
+    # plt.imshow(img_display, interpolation="nearest")
+    # plt.show()
+    # return
 
     default_batch_size = 1024 if device.type == "cuda" else 64
     default_workers = 4 if device.type == "cuda" else 1

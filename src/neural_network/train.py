@@ -55,8 +55,9 @@ def _prepare_training_data(args, device):
     # else:
     #     train_dataset = get_emnist_dataset(True, apply_transform=not args.gpu_uint8)
     emnist_dataset = get_emnist_dataset(True, apply_transform=not args.gpu_uint8)
-    chars74k_dataset = get_chars74k_dataset(True)
+    chars74k_dataset = get_chars74k_dataset(not args.gpu_uint8)
     train_dataset = ConcatDataset([emnist_dataset, chars74k_dataset])
+    # train_dataset = ConcatDataset([chars74k_dataset])
     print(
         f"2. Dataset loaded successfully! Using {'emnist' if not fine_tuning else 'chars74k'}"
     )
