@@ -64,12 +64,71 @@ def remove_debug_images():
             os.remove(f"{DEBUG_FOLDER}/{f}")
 
 
-def pos_processing_letter(line: Line, box: Box, char: str):
+def pos_processing_letter(
+    line: Line, box: Box, char: str, candidates: list[tuple[str, float]]
+):
     threshold = line.bbox.h * 0.05
     if abs(box.y - line.bbox.y) > threshold and char.isupper():
         return char.lower()
+    elif (
+        abs(box.y - line.bbox.y) <= threshold
+        and not char.isdigit()
+        and char.islower()
+        and box.w / max(box.h, 1) >= 0.4
+    ):
+        upper_candidate = next(
+            filter(lambda item: item[0] == char.upper(), candidates), None
+        )
+        if upper_candidate and upper_candidate[1] > 15:
+            return upper_candidate[0]
 
     return char
+
+
+def pos_processing_line(
+    line: Line,
+    chars: list[str],
+    candidates: list[list[tuple[str, float]]],
+    space_tolerance: int,
+) -> list[str]:
+    chars = [
+        pos_processing_letter(line, box, char, char_candidate)
+        for box, char, char_candidate in zip(line.boxes, chars, candidates)
+    ]
+
+    start = 0
+    for end in range(1, len(chars) + 1):
+        has_space = (
+            end == len(chars)
+            or line.boxes[end].x - (line.boxes[end - 1].x + line.boxes[end - 1].w)
+            > space_tolerance
+        )
+        if has_space:
+            token = chars[start:end]
+            if any(char.isdigit() for char in token):
+                for idx in range(start, end):
+                    if not chars[idx].isdigit():
+                        digit_candidates = [
+                            (char, score)
+                            for char, score in candidates[idx]
+                            if char.isdigit()
+                        ]
+                        if digit_candidates:
+                            best_digit, score = max(
+                                digit_candidates, key=lambda candidate: candidate[1]
+                            )
+                            if (
+                                score
+                                >= max(
+                                    candidate_score
+                                    for _, candidate_score in candidates[idx]
+                                )
+                                * 0.15
+                            ):
+                                chars[idx] = best_digit
+            start = end
+
+    return chars
 
 
 def box_features(line: Line, box: Box) -> dict[str, float]:
@@ -95,7 +154,7 @@ if __name__ == "__main__":
         ["9515", "I like Lily and Mimi who use 10 old maps while Oliver and Sam read"],
         ["1334", "I like Lily and Mimi who use 10 old maps while Oliver and Sam read"],
     ]
-    current_index = 2
+    current_index = 3
     image_name = images[current_index][0]
     original_text = images[current_index][1]
 
@@ -118,22 +177,11 @@ if __name__ == "__main__":
     similar = "fFlIi0Oo"
 
     for line in lines:
-        curr_x = -1
+        line_results = []
         for box in line.boxes:
             x, y, w, h = box.get_values()
             roi = img[y : y + h, x : x + w]
             resized, input_tensor = process_roi(roi)
-
-            if new_line:
-                new_line = False
-                predicted_text += " "
-
-            if curr_x != -1 and abs(x - curr_x) > tollerance:  # has space
-                # print(f"Space size {abs(x - curr_x)}")
-                predicted_text += " "
-
-            curr_x = x + w
-            curr_y = y
 
             with torch.no_grad():
                 output = model(input_tensor)
@@ -143,45 +191,58 @@ if __name__ == "__main__":
 
                 _, pred = torch.max(output, 1)
                 model_char = class_names[int(pred.item())]
-                char = model_char
-
-                char = pos_processing_letter(line, box, char)
-                predicted_text += char
-                idx = len(predicted_text) - 1
-                expected_char = original_text[idx]
-
-                if char == expected_char:
-                    results["correct"] += 1
-                elif char.lower() == expected_char.lower():
-                    results["case_swap"] += 1
-                elif char.isalnum() != expected_char.isalnum():
-                    results["number_swap"] += 1
-                else:
-                    results["wrong_char"] += 1
 
                 top_candidates = [
                     (class_names[i], round(float(probs[i] * 100), 2))
                     for i in probs.topk(min(5, probs.numel())).indices
                 ]
 
-                if char != expected_char:
-                    # Save the 28x28 ROI image for a misclassified character.
-                    name = f"{idx + 1}_exp_{expected_char}_got_{char}"
-                    print(
-                        name,
-                        f"model={model_char}",
-                        # f"geometry={box_features(line, box)}",
-                        top_candidates,
-                    )
-                    filename = f"{DEBUG_FOLDER}/{name}.png"
-                    cv2.imwrite(filename, resized)
-                # elif model_char in similar:
-                #     print(
-                #         "SIMILAR",
-                #         f"model={model_char}",
-                #         f"pospr={char}",
-                #         top_candidates,
-                #     )
+            line_results.append((resized, model_char, top_candidates))
+
+        line_chars = pos_processing_line(
+            line,
+            [model_char for _, model_char, _ in line_results],
+            [top_candidates for _, _, top_candidates in line_results],
+            tollerance,
+        )
+        curr_x = -1
+        for box, char, (resized, model_char, top_candidates) in zip(
+            line.boxes, line_chars, line_results
+        ):
+            x, _, w, _ = box.get_values()
+            if new_line:
+                new_line = False
+                predicted_text += " "
+
+            if curr_x != -1 and abs(x - curr_x) > tollerance:  # has space
+                predicted_text += " "
+
+            curr_x = x + w
+            predicted_text += char
+            idx = len(predicted_text) - 1
+            expected_char = original_text[idx]
+
+            if char == expected_char:
+                results["correct"] += 1
+            elif char.lower() == expected_char.lower():
+                results["case_swap"] += 1
+            elif char.isalnum() != expected_char.isalnum():
+                results["number_swap"] += 1
+            else:
+                results["wrong_char"] += 1
+
+            if char != expected_char:
+                # Save the 28x28 ROI image for a misclassified character.
+                name = f"{idx + 1}_exp_{expected_char}_got_{char}"
+                print(
+                    "==>",
+                    name,
+                    f"model={model_char}",
+                    # f"geometry={box_features(line, box)}\n",
+                    top_candidates,
+                )
+                filename = f"{DEBUG_FOLDER}/{name}.png"
+                cv2.imwrite(filename, resized)
 
         new_line = True
 
