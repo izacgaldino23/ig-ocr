@@ -5,4 +5,5 @@ __pycache__/
 test_gpu.py
 .codebook.toml
 log/profiler/
+log/runs/
 .zed/

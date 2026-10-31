@@ -121,6 +121,8 @@ def character_segmentation(image_name: str):
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
         if w >= 3 or h >= 3:  # filter small noises
+            y += 1
+            h -= 2
             bbox = Box(x, y, w, h)
             raw_boxes.append(bbox)
 
@@ -175,7 +177,7 @@ def sort_boxes_by_line(boxes: list[Box], tolerance=25) -> list[Line]:
 
 
 if __name__ == "__main__":
-    image_name = "1334"
+    image_name = "9515"
     img, lines = character_segmentation(image_name)
     # cv2.imwrite(f"{test_image_path(image_name)}-dilatted.png", img)
     for line in lines:

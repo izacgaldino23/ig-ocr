@@ -47,6 +47,17 @@ Use `--workers 0` to compare single-process loading, or `--batch-size` to test
 another batch size. The defaults remain 4 workers and batch size 256 on CUDA.
 Evaluation uses fixed orientation/normalization preprocessing (no random
 augmentation), so repeated evaluations of the same checkpoint are comparable.
+Training records train/validation loss, accuracy, macro-accuracy, and epoch
+duration in TensorBoard; each run identifies its input and output checkpoint
+in the run name and metadata. The saved checkpoint uses the epoch with the
+lowest validation loss. Evaluation records overall, macro, and per-class test
+accuracy in a separate TensorBoard run named for the evaluated checkpoint.
+
+Start TensorBoard from the repository root to inspect these runs:
+
+```powershell
+.venv\Scripts\python.exe -m tensorboard.main --logdir log/runs
+```
 
 To try a slightly smaller CNN while initializing it from the existing model,
 choose a new output checkpoint and add `--compact`:

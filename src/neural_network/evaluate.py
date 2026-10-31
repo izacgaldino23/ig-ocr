@@ -1,8 +1,10 @@
 import time
+from datetime import datetime
 
 import torch
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms import v2
 from torchvision.transforms.v2.functional import to_dtype
 from torchvision.utils import save_image
@@ -44,7 +46,7 @@ def _gpu_uint8_batches(test_dataset, batch_size, device):
         yield batch_images, labels[start : start + batch_size]
 
 
-def _evaluate(model, test_loader, class_names, device):
+def _evaluate(model, test_loader, class_names, device, writer):
     model.eval()
     correct = torch.zeros((), dtype=torch.long, device=device)
     total = 0
@@ -74,7 +76,11 @@ def _evaluate(model, test_loader, class_names, device):
     class_totals = confusion.sum(dim=1)
     class_correct = confusion.diagonal()
     class_accuracy = class_correct.float() / class_totals.clamp_min(1)
+    # macro_accuracy = class_accuracy.mean().item()
+    # writer.add_scalar("Accuracy/test", accuracy)
+    # writer.add_scalar("Accuracy/macro_test", macro_accuracy)
     for i in class_accuracy.argsort(descending=True).tolist():
+        # writer.add_scalar(f"Accuracy/test_by_class/{class_names[i]}", class_accuracy[i])
         print(
             f"{class_names[i]}: {class_accuracy[i]:.4f}. "
             f"[{class_correct[i]} of {class_totals[i]}]"
@@ -120,7 +126,9 @@ def main():
     content = torch.load(file, map_location="cpu", weights_only=True)
     class_names: list[str] = content["classes"]
     model = model_from_checkpoint(content).to(device)
-    _evaluate(model, test_loader, class_names, device)
+    # run_name = f"{datetime.now():%Y%m%d-%H%M%S}-eval-{file.stem}"
+    # with SummaryWriter(log_dir=f"log/runs/{run_name}") as writer:
+    _evaluate(model, test_loader, class_names, device, None)
 
 
 if __name__ == "__main__":

@@ -35,10 +35,15 @@ def process_roi(roi: np.ndarray) -> tuple[MatLike, torch.Tensor]:
     square_img[y_offset : y_offset + h, x_offset : x_offset + w] = roi
 
     # resize to 28x28, EMINIST default size
-    resized_24x24 = cv2.resize(square_img, (24, 24), interpolation=cv2.INTER_AREA)
-    padded_28x28 = np.zeros((28, 28), dtype=np.uint8)
-    padded_28x28[2:26, 2:26] = resized_24x24
-    resized = padded_28x28
+    img_size = 28
+    size_char = 26
+    pad = int((img_size - size_char) / 2)
+    resized_char = cv2.resize(
+        square_img, (size_char, size_char), interpolation=cv2.INTER_AREA
+    )
+    padded = np.zeros((img_size, img_size), dtype=np.uint8)
+    padded[pad : img_size - pad, pad : img_size - pad] = resized_char
+    resized = padded
 
     # convert to tensor pytorch and normalize (0 to 1)
     tensor_img = torch.from_numpy(resized).float() / 255.0

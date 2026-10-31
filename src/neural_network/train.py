@@ -4,6 +4,7 @@ from datetime import datetime
 
 import torch
 from torch.utils.data import ConcatDataset, DataLoader, Subset
+from torch.utils.tensorboard import SummaryWriter
 
 from src.neural_network.config import init_config
 from src.neural_network.model import (
@@ -422,53 +423,95 @@ def _train(
     print("6. Starting training...")
     start_total = time.perf_counter()
     gpu_transforms = get_gpu_augmentations().to(device)
+    input_checkpoint = args.input
+    output_checkpoint = args.output if args.output != 0 else args.input
+    run_name = (
+        f"{datetime.now():%Y%m%d-%H%M%S}-train-{input_checkpoint}-"
+        f"to-{output_checkpoint}"
+    )
+    best_validation_loss = float("inf")
+    best_epoch = 0
+    best_model_state = None
 
-    for epoch in range(epochs):
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] -> Epoch {epoch + 1} started")
-        epoch_start = time.perf_counter()
-        train_loss, train_accuracy, training_duration = _train_epoch(
-            args,
-            model,
-            train_loader,
-            training_images,
-            training_labels,
-            train_indices,
-            batch_size,
-            loss_fn,
-            optimizer,
-            gpu_transforms,
-            device,
-            num_batches,
-            epoch,
-            epochs,
+    with SummaryWriter(log_dir=f"log/runs/{run_name}") as writer:
+        writer.add_text(
+            "Model/checkpoints",
+            f"Requested input: `{input_checkpoint}` "
+            f"(loads if available); output: `{output_checkpoint}`",
+            0,
         )
-        validation_loss, validation_accuracy, macro_accuracy = _validate(
-            model,
-            validation_loader,
-            training_images,
-            training_labels,
-            validation_indices,
-            batch_size,
-            loss_fn,
-            _get_dataset_classes(train_dataset),
-            device,
-        )
-        model.train()
-        epoch_duration = time.perf_counter() - epoch_start
-        print(
-            f"[{datetime.now().strftime('%H:%M:%S')}] -> Epoch {epoch + 1} "
-            f"finished in {epoch_duration:.2f}s"
-        )
-        print(
-            f"Epoch [{epoch + 1}/{epochs}] summary: "
-            f"Train loss: {train_loss:.4f}, "
-            f"Train accuracy: {train_accuracy * 100:.2f}%, "
-            f"Validation loss: {validation_loss:.4f}, "
-            f"Validation accuracy: {validation_accuracy * 100:.2f}%, "
-            f"Macro-accuracy: {macro_accuracy * 100:.2f}%, "
-            f"Training: {training_duration:.2f}s, "
-            f"Total: {epoch_duration:.2f}s"
-        )
+        for epoch in range(epochs):
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] -> Epoch {epoch + 1} started"
+            )
+            epoch_start = time.perf_counter()
+            train_loss, train_accuracy, training_duration = _train_epoch(
+                args,
+                model,
+                train_loader,
+                training_images,
+                training_labels,
+                train_indices,
+                batch_size,
+                loss_fn,
+                optimizer,
+                gpu_transforms,
+                device,
+                num_batches,
+                epoch,
+                epochs,
+            )
+            validation_loss, validation_accuracy, macro_accuracy = _validate(
+                model,
+                validation_loader,
+                training_images,
+                training_labels,
+                validation_indices,
+                batch_size,
+                loss_fn,
+                _get_dataset_classes(train_dataset),
+                device,
+            )
+            model.train()
+            epoch_duration = time.perf_counter() - epoch_start
+            step = epoch + 1
+            writer.add_scalar("Loss/train", train_loss, step)
+            writer.add_scalar("Loss/validation", validation_loss, step)
+            writer.add_scalar("Accuracy/train", train_accuracy, step)
+            writer.add_scalar("Accuracy/validation", validation_accuracy, step)
+            writer.add_scalar("Accuracy/macro_validation", macro_accuracy, step)
+            writer.add_scalar("Time/epoch_seconds", epoch_duration, step)
+
+            if validation_loss < best_validation_loss:
+                best_validation_loss = validation_loss
+                best_epoch = step
+                best_model_state = {
+                    name: value.detach().cpu().clone()
+                    for name, value in model.state_dict().items()
+                }
+
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] -> Epoch {epoch + 1} "
+                f"finished in {epoch_duration:.2f}s"
+            )
+            print(
+                f"Epoch [{epoch + 1}/{epochs}] summary: "
+                f"Train loss: {train_loss:.4f}, "
+                f"Train accuracy: {train_accuracy * 100:.2f}%, "
+                f"Validation loss: {validation_loss:.4f}, "
+                f"Validation accuracy: {validation_accuracy * 100:.2f}%, "
+                f"Macro-accuracy: {macro_accuracy * 100:.2f}%, "
+                f"Training: {training_duration:.2f}s, "
+                f"Total: {epoch_duration:.2f}s"
+            )
+
+    if best_model_state is None:
+        raise RuntimeError("Training completed without a validation checkpoint")
+    model.load_state_dict(best_model_state)
+    print(
+        f"Best validation loss: {best_validation_loss:.4f} "
+        f"at epoch {best_epoch}; saving this model."
+    )
 
     total_duration = time.perf_counter() - start_total
     print(f"7. Training completed in {total_duration:.2f}s!")
