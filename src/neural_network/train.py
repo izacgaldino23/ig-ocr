@@ -5,12 +5,13 @@ from datetime import datetime
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from neural_network.data import (
+from src.neural_network.config import init_config
+from src.neural_network.data import (
     get_dataset_classes,
     get_dataset_targets,
+    get_gpu_augmentations,
     prepare_training_data,
 )
-from src.neural_network.config import init_config
 from src.neural_network.model import (
     COMPACT_CNN_ARCHITECTURE,
     COMPACT_CNN_CHANNELS,
@@ -19,7 +20,6 @@ from src.neural_network.model import (
     SIMPLE_CNN_ARCHITECTURE,
     STD,
     SimpleCNN,
-    get_gpu_augmentations,
     load_checkpoint_weights,
 )
 from src.utils.paths import checkpoint_path
