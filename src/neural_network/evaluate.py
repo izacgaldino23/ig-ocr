@@ -10,12 +10,10 @@ from torchvision.transforms.v2.functional import to_dtype
 from torchvision.utils import save_image
 
 from src.neural_network.config import init_config
+from src.neural_network.data import fix_emnist_orientation, get_chars74k_dataset
 from src.neural_network.model import (
     MEAN,
     STD,
-    fix_emnist_orientation,
-    get_chars74k_dataset,
-    get_emnist_dataset,
     model_from_checkpoint,
 )
 from src.utils.paths import PROJECT_ROOT, checkpoint_path
