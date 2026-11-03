@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
@@ -14,7 +16,7 @@ from src.utils.paths import DATA_DIR
 
 
 class Train:
-    def __init__(self, model_name, batch_size=32, workers=4) -> None:
+    def __init__(self, model_name, batch_size=64, workers=4) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = CRNN(len(CHAR2IDX) + 1, model_name).to(self.device)
         self.criterion = nn.CTCLoss(blank=BLANK_IDX, zero_infinity=True)
@@ -25,7 +27,7 @@ class Train:
 
         dataset_dir = DATA_DIR / "words-dataset"
 
-        self.dataset = OCRDataset(dataset_dir)
+        self.dataset = OCRDataset(dataset_dir, train=True)
         self.dataloader = DataLoader(
             self.dataset,
             shuffle=True,
@@ -38,35 +40,55 @@ class Train:
 
         self.model.load_if_exists()
 
-    def execute(self):
-        # Simplified training (1 example epoch)
+    def execute(self, epochs=5):
         self.model.train()
-        for images, labels, target_lengths in self.dataloader:
-            images = images.to(self.device)
-            labels = labels.to(self.device)
+        total_batches = len(self.dataloader)
 
-            # Forward Pass
-            preds = self.model(images)  # Format: (B, T, Num_Classes)
-            preds = preds.permute(
-                1, 0, 2
-            )  # CTCLoss requires format (T, B, Num_Classes)
-            log_probability = torch.nn.functional.log_softmax(preds, dim=2)
+        for epoch in range(epochs):
+            epoch_loss = 0.0
+            for batch_idx, (images, labels, target_lengths) in enumerate(
+                self.dataloader, 1
+            ):
+                images = images.to(self.device)
+                labels = labels.to(self.device)
 
-            # Time step dimensions for the batch
-            input_lengths = torch.tensor(
-                [img.shape[2] // 4 for img in images], dtype=torch.long
+                # Forward Pass
+                preds = self.model(images)  # Format: (B, T, Num_Classes)
+                preds = preds.permute(
+                    1, 0, 2
+                )  # CTCLoss requires format (T, B, Num_Classes)
+                log_probability = torch.nn.functional.log_softmax(preds, dim=2)
+
+                # Time step dimensions for the batch
+                input_lengths = torch.tensor(
+                    [img.shape[2] // 4 for img in images], dtype=torch.long
+                )
+
+                loss = self.criterion(
+                    log_probability, labels, input_lengths, target_lengths
+                )
+
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+                torch.cuda.empty_cache()
+
+                epoch_loss += loss.item()
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(
+                    f"[{current_time}] Epoch [{epoch + 1}/{epochs}] | "
+                    f"Batch [{batch_idx}/{total_batches}] | "
+                    f"Loss: {loss.item():.4f}"
+                )
+
+            avg_loss = epoch_loss / total_batches if total_batches > 0 else 0.0
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(
+                f"[{current_time}] === End of Epoch {epoch + 1}/{epochs} | Average Loss: {avg_loss:.4f} ==="
             )
-
-            loss = self.criterion(
-                log_probability, labels, input_lengths, target_lengths
-            )
-
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-            torch.cuda.empty_cache()
 
         self.model.save_model()
+        print(f"Model saved successfully as {self.model_name}")
 
     def decode_ctc(self, preds):
         # predictions: tensors in the form (T, Num_Classes)
@@ -76,7 +98,7 @@ class Train:
         last_idx = BLANK_IDX
 
         for idx in pred_indices:
-            if idx != BLANK_IDX and idx != last_idx:
+            if idx != BLANK_IDX and idx != last_idx and idx in IDX2CHAR:
                 decoded_text.append(IDX2CHAR[idx])
             last_idx = idx
 
@@ -84,5 +106,5 @@ class Train:
 
 
 if __name__ == "__main__":
-    train = Train("0.1")
-    train.execute()
+    train = Train("0.1", batch_size=32)
+    train.execute(epochs=5)
