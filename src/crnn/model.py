@@ -2,6 +2,7 @@ import cv2
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import Dataset
 
 from src.utils.paths import checkpoint_path
@@ -93,12 +94,25 @@ class CRNN(nn.Module):
         # 3. Output Projection
         self.fc = nn.Linear(128 * 2, num_classes)
 
-    def forward(self, x):
-        features = self.cnn(x)  # (B, 256, 1, W) W = img_width / 4
+    def forward(self, x, input_lengths=None):
+        features = self.cnn(x)
         features = features.squeeze(2)  # (B, 256, W)
         features = features.permute(0, 2, 1)  # (B, W, 256) -> (Batch, Time, Feat)
 
-        out, _ = self.rnn(features)  # (B, W, 256)
+        if input_lengths is None:
+            out, _ = self.rnn(features)
+        else:
+            packed = pack_padded_sequence(
+                features,
+                input_lengths.cpu(),
+                batch_first=True,
+                enforce_sorted=False,
+            )
+            packed_out, _ = self.rnn(packed)
+            out, _ = pad_packed_sequence(
+                packed_out, batch_first=True, total_length=features.shape[1]
+            )
+
         logits = self.fc(out)  # (B, 64, num_classes)
         return logits
 

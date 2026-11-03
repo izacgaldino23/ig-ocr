@@ -4,10 +4,12 @@ import random
 import shutil
 
 import nltk
+from fontTools.ttLib import TTFont, TTLibError
 from nltk.corpus import floresta
 from PIL import ImageFont
 from trdg.generators import GeneratorFromStrings
 
+from src.crnn.model import ALPHABET
 from src.utils.paths import DATA_DIR
 
 
@@ -38,7 +40,6 @@ class TxtRecognitionGenerator:
             os.path.join(system_fonts_path, "*.otf")
         )
 
-        # Filter out fonts known to be symbols, emojis, or lacking standard characters
         excluded_keywords = [
             "symbol",
             "bssym",
@@ -52,6 +53,7 @@ class TxtRecognitionGenerator:
             "mangal",
             "leelawadee",
         ]
+        required_codepoints = {ord(char) for char in ALPHABET}
 
         valid_fonts = []
         for font_path in all_fonts:
@@ -59,15 +61,20 @@ class TxtRecognitionGenerator:
             if any(exc in basename for exc in excluded_keywords):
                 continue
             try:
-                # Test loading the font and getting length for basic Latin/Portuguese chars
                 font = ImageFont.truetype(font_path, 32)
-                if font.getlength("a") > 0:
+                if font.getlength("a") <= 0:
+                    continue
+                with TTFont(font_path, lazy=True) as tt_font:
+                    cmap = tt_font.getBestCmap() or {}
+                if required_codepoints.issubset(cmap):
                     valid_fonts.append(font_path)
-            except Exception:
-                print(f"font {font_path} invalid")
-                continue
+            except (OSError, TTLibError, KeyError, ValueError) as exc:
+                print(f"font {font_path} invalid: {exc}")
 
-        self.available_fonts = valid_fonts if valid_fonts else all_fonts
+        if not valid_fonts:
+            raise RuntimeError("No system fonts support the complete OCR alphabet")
+
+        self.available_fonts = valid_fonts
 
     def apply_mask(self, mask: str):
         return "".join(
@@ -209,18 +216,23 @@ class TxtRecognitionGenerator:
 
 if __name__ == "__main__":
     trg = TxtRecognitionGenerator()
-    train = False
+
     text_size = 20
     blur = True
-    for i in range(2):
+
+    train = False
+
+    count_words = 400 if train else 200
+    count_custom = 10 if train else 5  # 10*8 = 80
+    for i in range(4):
         trg.generate_images(
             words_by_image=i + 1,
-            count=400,
+            count=count_words,
             blur=blur,
             train=train,
             clear=(i == 0),
             text_size=text_size,
         )
         trg.generate_images_masked(
-            count=1, blur=blur, train=train, clear=False, text_size=text_size
+            count=count_custom, blur=blur, train=train, clear=False, text_size=text_size
         )

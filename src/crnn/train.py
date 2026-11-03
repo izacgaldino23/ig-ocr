@@ -8,6 +8,7 @@ from src.crnn.model import (
     BLANK_IDX,
     CHAR2IDX,
     CRNN,
+    IDX2CHAR,
     OCRDataset,
     ocr_collate_fn,
 )
@@ -59,28 +60,84 @@ class Train:
                 labels = labels.to(self.device, non_blocking=True)
 
                 # Forward Pass
-                preds = self.model(images)  # Format: (B, T, Num_Classes)
-                preds = preds.permute(
+                batch_logits = self.model(images, input_lengths)
+                log_probability = batch_logits.permute(
                     1, 0, 2
                 )  # CTCLoss requires format (T, B, Num_Classes)
-                log_probability = torch.nn.functional.log_softmax(preds, dim=2)
+                log_probability = torch.nn.functional.log_softmax(
+                    log_probability, dim=2
+                )
 
                 loss = self.criterion(
                     log_probability, labels, input_lengths, target_lengths
                 )
 
+                debug_batch = batch_idx == total_batches
+                if debug_batch:
+                    valid_steps = (
+                        torch.arange(batch_logits.shape[1], device=self.device)[None, :]
+                        < input_lengths.to(self.device)[:, None]
+                    )
+                    pred_indices = batch_logits.argmax(dim=2)
+                    blank_ratio = (
+                        (pred_indices[valid_steps] == BLANK_IDX).float().mean().item()
+                    )
+                    blank_probability = (
+                        batch_logits[valid_steps]
+                        .softmax(dim=-1)[:, BLANK_IDX]
+                        .mean()
+                        .item()
+                    )
+                    first_target_len = target_lengths[0].item()
+                    first_target = "".join(
+                        IDX2CHAR[idx]
+                        for idx in labels[:first_target_len].tolist()
+                        if idx in IDX2CHAR
+                    )
+                    first_path = []
+                    previous = BLANK_IDX
+                    for idx in pred_indices[0, : input_lengths[0]].tolist():
+                        if idx != BLANK_IDX and idx != previous and idx in IDX2CHAR:
+                            first_path.append(IDX2CHAR[idx])
+                        previous = idx
+                    print(
+                        f"CTC Debug | Epoch {epoch + 1} Batch {batch_idx} | "
+                        f"image_shape={tuple(images.shape)} logits={tuple(batch_logits.shape)} "
+                        f"input_lengths={input_lengths.min().item()}..{input_lengths.max().item()} "
+                        f"target_lengths={target_lengths.min().item()}..{target_lengths.max().item()} | "
+                        f"blank_argmax={blank_ratio:.3f} "
+                        f"mean_blank_prob={blank_probability:.3f} "
+                        f"first_target={first_target!r} "
+                        f"first_pred={''.join(first_path)!r}"
+                    )
+
                 self.optimizer.zero_grad()
                 loss.backward()
+                if debug_batch:
+                    grad_norm = self.model.fc.weight.grad.norm().item()
+                    weight_before_step = self.model.fc.weight.detach().clone()
                 self.optimizer.step()
+                if debug_batch:
+                    update_norm = (
+                        (self.model.fc.weight.detach() - weight_before_step)
+                        .norm()
+                        .item()
+                    )
+                    print(
+                        f"CTC Debug | loss={loss.item():.4f} "
+                        f"fc_grad_norm={grad_norm:.6g} "
+                        f"fc_update_norm={update_norm:.6g}"
+                    )
                 torch.cuda.empty_cache()
 
                 epoch_loss += loss.item()
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(
-                    f"[{current_time}] Epoch [{epoch + 1}/{epochs}] | "
-                    f"Batch [{batch_idx}/{total_batches}] | "
-                    f"Loss: {loss.item():.4f}"
-                )
+                if batch_idx == 1 or batch_idx == total_batches:
+                    print(
+                        f"[{current_time}] Epoch [{epoch + 1}/{epochs}] | "
+                        f"Batch [{batch_idx}/{total_batches}] | "
+                        f"Loss: {loss.item():.4f}"
+                    )
 
             scheduler.step()
             avg_loss = epoch_loss / total_batches if total_batches > 0 else 0.0
@@ -97,4 +154,4 @@ class Train:
 
 if __name__ == "__main__":
     train = Train("0.1", batch_size=32)
-    train.execute(epochs=10)
+    train.execute(epochs=50)

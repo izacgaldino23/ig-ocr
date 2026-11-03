@@ -1,3 +1,6 @@
+import csv
+from difflib import SequenceMatcher
+
 import torch
 from torch.utils.data import DataLoader
 
@@ -27,6 +30,28 @@ def decode_ctc(preds):
     return "".join(decoded_text)
 
 
+def count_wrong_chars(str1, str2):
+    matcher = SequenceMatcher(None, str1, str2)
+    errors = {
+        "replace": 0,
+        "delete": 0,
+        "insert": 0,
+    }
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "replace":
+            # Substitution: the number of wrong characters is the size of the modified segment
+            errors["replace"] += max(i2 - i1, j2 - j1)
+        elif tag == "delete":
+            # Characters removed from str1
+            errors["delete"] += i2 - i1
+        elif tag == "insert":
+            # Characters inserted into str2
+            errors["insert"] += j2 - j1
+
+    return errors
+
+
 if __name__ == "__main__":
     model_name = "0.1"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -53,13 +78,13 @@ if __name__ == "__main__":
     total = 0
 
     errors = []
-
+    headers = ["got", "expected", "replace", "delete", "insert"]
     with torch.inference_mode():
         for images, labels, target_lengths, input_lengths in test_loader:
             images = images.to(device, non_blocking=True)
 
             # Forward Pass: retorna (B, T, Num_Classes)
-            preds = model(images)
+            preds = model(images, input_lengths)
 
             start_idx = 0
             for i, target_len in enumerate(target_lengths):
@@ -78,14 +103,26 @@ if __name__ == "__main__":
                 if pred_text == gt_text:
                     correct_count += 1
                 else:
-                    errors.append(f"got [{pred_text}] expected: [{gt_text}]\n")
+                    mistakes = count_wrong_chars(pred_text, gt_text)
+                    errors.append(
+                        [
+                            pred_text,
+                            gt_text,
+                            mistakes["replace"],
+                            mistakes["delete"],
+                            mistakes["insert"],
+                        ]
+                    )
                 total += 1
 
             torch.cuda.empty_cache()
 
-    errors_file = PROJECT_ROOT / "evaluate_errors.txt"
-    with open(errors_file, "w", encoding="utf-8") as f:
-        f.writelines(errors)
+    errors_file = PROJECT_ROOT / "artifacts" / "evaluate_errors.csv"
+    with open(errors_file, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+
+        writer.writerow(headers)
+        writer.writerows(errors)
 
     accuracy = (correct_count / total) * 100 if total > 0 else 0.0
     print(
