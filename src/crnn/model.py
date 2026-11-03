@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import Dataset
+from torchvision.transforms import v2
 
 from src.utils.paths import checkpoint_path
 
@@ -90,6 +91,7 @@ class CRNN(nn.Module):
         self.rnn = nn.LSTM(
             input_size=256, hidden_size=128, bidirectional=True, batch_first=True
         )
+        self.dropout = nn.Dropout(0.2)
 
         # 3. Output Projection
         self.fc = nn.Linear(128 * 2, num_classes)
@@ -98,6 +100,7 @@ class CRNN(nn.Module):
         features = self.cnn(x)
         features = features.squeeze(2)  # (B, 256, W)
         features = features.permute(0, 2, 1)  # (B, W, 256) -> (Batch, Time, Feat)
+        features = self.dropout(features)
 
         if input_lengths is None:
             out, _ = self.rnn(features)
@@ -128,15 +131,37 @@ class CRNN(nn.Module):
         print(f"Model {self.name} doesn't exist")
         return False
 
-    def save_model(self):
-        file = checkpoint_path(self.name, "ocr")
+    def save_model(self, output_name=""):
+        name = self.name if output_name == "" else output_name
+        file = checkpoint_path(name, "ocr")
         file.parent.mkdir(parents=True, exist_ok=True)
         torch.save({"model": self.state_dict()}, file)
+
+
+gpu_augmentations = v2.Compose(
+    [
+        v2.RandomApply(
+            [
+                v2.RandomAffine(
+                    degrees=(-2, 2),
+                    scale=(0.95, 1.05),
+                    shear=(-2, 2),
+                    interpolation=v2.InterpolationMode.BILINEAR,
+                    fill=1.0,
+                )
+            ],
+            p=0.7,
+        ),
+        v2.RandomApply([v2.ColorJitter(brightness=0.15, contrast=0.15)], p=0.5),
+        v2.RandomApply([v2.GaussianBlur(kernel_size=3, sigma=(0.1, 0.7))], p=0.15),
+    ]
+)
 
 
 def ocr_collate_fn(batch):
     # batch: list of tuples (img_tensor, target_tensor, target_length)
     images, targets, target_lengths = zip(*batch)
+    image_widths = torch.tensor([img.shape[2] for img in images])
     input_lengths = torch.tensor([img.shape[2] // 4 for img in images])
 
     # 1. Finds the maximum width within THIS specific batch
@@ -155,4 +180,10 @@ def ocr_collate_fn(batch):
     images_tensor = torch.stack(padded_images, dim=0)
     targets_tensor = torch.cat(targets, dim=0)
 
-    return images_tensor, targets_tensor, torch.tensor(target_lengths), input_lengths
+    return (
+        images_tensor,
+        targets_tensor,
+        torch.tensor(target_lengths),
+        input_lengths,
+        image_widths,
+    )

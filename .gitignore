@@ -7,3 +7,4 @@ test_gpu.py
 log/profiler/
 log/runs/
 .zed/
+*.csv

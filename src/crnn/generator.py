@@ -223,16 +223,16 @@ if __name__ == "__main__":
     train = False
 
     count_words = 400 if train else 200
-    count_custom = 10 if train else 5  # 10*8 = 80
+    count_custom = 20 if train else 10  # 10*8 = 80
     for i in range(4):
-        trg.generate_images(
-            words_by_image=i + 1,
-            count=count_words,
-            blur=blur,
-            train=train,
-            clear=(i == 0),
-            text_size=text_size,
-        )
+        # trg.generate_images(
+        #     words_by_image=i + 1,
+        #     count=count_words,
+        #     blur=blur,
+        #     train=train,
+        #     clear=(i == 0),
+        #     text_size=text_size,
+        # )
         trg.generate_images_masked(
             count=count_custom, blur=blur, train=train, clear=False, text_size=text_size
         )

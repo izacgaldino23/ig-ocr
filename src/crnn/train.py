@@ -2,7 +2,9 @@ from datetime import datetime
 
 import torch
 from torch import nn, optim
+from torch.nn import functional as F
 from torch.utils.data import DataLoader
+from torchvision.transforms import v2
 
 from src.crnn.model import (
     BLANK_IDX,
@@ -10,13 +12,14 @@ from src.crnn.model import (
     CRNN,
     IDX2CHAR,
     OCRDataset,
+    gpu_augmentations,
     ocr_collate_fn,
 )
 from src.utils.paths import DATA_DIR
 
 
 class Train:
-    def __init__(self, model_name, batch_size=32, workers=4) -> None:
+    def __init__(self, model_name, output_name="", batch_size=32, workers=4) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = CRNN(len(CHAR2IDX) + 1, model_name)
         self.criterion = nn.CTCLoss(blank=BLANK_IDX, zero_infinity=True)
@@ -24,6 +27,7 @@ class Train:
             self.model.parameters(), lr=0.0001, weight_decay=1e-5
         )
         self.model_name = model_name
+        self.output_name = output_name
 
         dataset_dir = DATA_DIR / "words-dataset"
 
@@ -53,11 +57,27 @@ class Train:
 
         for epoch in range(epochs):
             epoch_loss = 0.0
-            for batch_idx, (images, labels, target_lengths, input_lengths) in enumerate(
-                self.dataloader, 1
-            ):
+            for batch_idx, (
+                images,
+                labels,
+                target_lengths,
+                input_lengths,
+                image_widths,
+            ) in enumerate(self.dataloader, 1):
+                cpu_images_pinned = images.is_pinned()
                 images = images.to(self.device, non_blocking=True)
                 labels = labels.to(self.device, non_blocking=True)
+                augmented_images = []
+                for image, width in zip(images, image_widths.tolist()):
+                    image = gpu_augmentations(image[:, :, :width])
+                    augmented_images.append(
+                        F.pad(
+                            image,
+                            (0, images.shape[-1] - width, 0, 0),
+                            mode="replicate",
+                        )
+                    )
+                images = torch.stack(augmented_images)
 
                 # Forward Pass
                 batch_logits = self.model(images, input_lengths)
@@ -73,6 +93,16 @@ class Train:
                 )
 
                 debug_batch = batch_idx == total_batches
+                if epoch == 0 and batch_idx == 1:
+                    print(
+                        f"Device Debug | model={next(self.model.parameters()).device} "
+                        f"images={images.device} labels={labels.device} "
+                        f"logits={batch_logits.device} "
+                        f"target_lengths={target_lengths.device} "
+                        f"input_lengths={input_lengths.device} "
+                        f"image_widths={image_widths.device} "
+                        f"cpu_batch_pinned={cpu_images_pinned}"
+                    )
                 if debug_batch:
                     valid_steps = (
                         torch.arange(batch_logits.shape[1], device=self.device)[None, :]
@@ -128,8 +158,6 @@ class Train:
                         f"fc_grad_norm={grad_norm:.6g} "
                         f"fc_update_norm={update_norm:.6g}"
                     )
-                torch.cuda.empty_cache()
-
                 epoch_loss += loss.item()
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 if batch_idx == 1 or batch_idx == total_batches:
@@ -148,10 +176,10 @@ class Train:
                 f"LR: {scheduler.get_last_lr()[0]:.6f} ==="
             )
 
-        self.model.save_model()
+        self.model.save_model(self.output_name)
         print(f"Model saved successfully as {self.model_name}")
 
 
 if __name__ == "__main__":
-    train = Train("0.1", batch_size=32)
+    train = Train("0.2", batch_size=32)
     train.execute(epochs=50)

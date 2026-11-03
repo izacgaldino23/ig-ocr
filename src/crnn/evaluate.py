@@ -1,5 +1,4 @@
 import csv
-from difflib import SequenceMatcher
 
 import torch
 from torch.utils.data import DataLoader
@@ -31,29 +30,45 @@ def decode_ctc(preds):
 
 
 def count_wrong_chars(str1, str2):
-    matcher = SequenceMatcher(None, str1, str2)
-    errors = {
-        "replace": 0,
-        "delete": 0,
-        "insert": 0,
-    }
+    distances = [[0] * (len(str2) + 1) for _ in range(len(str1) + 1)]
+    for i in range(len(str1) + 1):
+        distances[i][0] = i
+    for j in range(len(str2) + 1):
+        distances[0][j] = j
 
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == "replace":
-            # Substitution: the number of wrong characters is the size of the modified segment
-            errors["replace"] += max(i2 - i1, j2 - j1)
-        elif tag == "delete":
-            # Characters removed from str1
-            errors["delete"] += i2 - i1
-        elif tag == "insert":
-            # Characters inserted into str2
-            errors["insert"] += j2 - j1
+    for i, char1 in enumerate(str1, 1):
+        for j, char2 in enumerate(str2, 1):
+            distances[i][j] = min(
+                distances[i - 1][j] + 1,
+                distances[i][j - 1] + 1,
+                distances[i - 1][j - 1] + (char1 != char2),
+            )
+
+    errors = {"distance": distances[-1][-1], "replace": 0, "delete": 0, "insert": 0}
+    i, j = len(str1), len(str2)
+    while i or j:
+        if (
+            i
+            and j
+            and distances[i][j]
+            == distances[i - 1][j - 1] + (str1[i - 1] != str2[j - 1])
+        ):
+            if str1[i - 1] != str2[j - 1]:
+                errors["replace"] += 1
+            i -= 1
+            j -= 1
+        elif i and distances[i][j] == distances[i - 1][j] + 1:
+            errors["delete"] += 1
+            i -= 1
+        else:
+            errors["insert"] += 1
+            j -= 1
 
     return errors
 
 
 if __name__ == "__main__":
-    model_name = "0.1"
+    model_name = "0.2"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = CRNN(len(CHAR2IDX) + 1, model_name).to(device)
@@ -78,9 +93,18 @@ if __name__ == "__main__":
     total = 0
 
     errors = []
-    headers = ["got", "expected", "replace", "delete", "insert"]
+    headers = [
+        "image_path",
+        "got",
+        "expected",
+        "distance",
+        "replace",
+        "delete",
+        "insert",
+    ]
+    sample_idx = 0
     with torch.inference_mode():
-        for images, labels, target_lengths, input_lengths in test_loader:
+        for images, labels, target_lengths, input_lengths, _ in test_loader:
             images = images.to(device, non_blocking=True)
 
             # Forward Pass: retorna (B, T, Num_Classes)
@@ -104,18 +128,22 @@ if __name__ == "__main__":
                     correct_count += 1
                 else:
                     mistakes = count_wrong_chars(pred_text, gt_text)
+                    image_path = (
+                        dataset.dataset_dir / dataset.data[sample_idx]
+                    ).relative_to(DATA_DIR)
                     errors.append(
                         [
+                            image_path.as_posix(),
                             pred_text,
                             gt_text,
+                            mistakes["distance"],
                             mistakes["replace"],
                             mistakes["delete"],
                             mistakes["insert"],
                         ]
                     )
                 total += 1
-
-            torch.cuda.empty_cache()
+                sample_idx += 1
 
     errors_file = PROJECT_ROOT / "artifacts" / "evaluate_errors.csv"
     with open(errors_file, "w", encoding="utf-8", newline="") as f:
