@@ -1,6 +1,7 @@
 import glob
 import os
 import random
+import shutil
 
 import nltk
 from nltk.corpus import floresta
@@ -33,16 +34,49 @@ class TxtRecognitionGenerator:
 
     def _load_system_fonts(self):
         system_fonts_path = "C:\\Windows\\Fonts"
-        self.available_fonts = glob.glob(
-            os.path.join(system_fonts_path, "*.ttf")
-        ) + glob.glob(os.path.join(system_fonts_path, "*.otf"))
+        all_fonts = glob.glob(os.path.join(system_fonts_path, "*.ttf")) + glob.glob(
+            os.path.join(system_fonts_path, "*.otf")
+        )
+
+        # Filter out fonts known to be symbols, emojis, or lacking standard characters
+        excluded_keywords = [
+            "symbol",
+            "bssym",
+            "wingdings",
+            "webdings",
+            "marlett",
+            "emoji",
+            "codec",
+            "math",
+            "david",
+            "mangal",
+            "leelawadee",
+        ]
+
+        valid_fonts = []
+        for font_path in all_fonts:
+            basename = os.path.basename(font_path).lower()
+            if any(exc in basename for exc in excluded_keywords):
+                continue
+            try:
+                # Test loading the font and getting length for basic Latin/Portuguese chars
+                font = ImageFont.truetype(font_path, 32)
+                if font.getlength("a") > 0:
+                    valid_fonts.append(font_path)
+            except Exception:
+                print(f"font {font_path} invalid")
+                continue
+
+        self.available_fonts = valid_fonts if valid_fonts else all_fonts
 
     def apply_mask(self, mask: str):
         return "".join(
             str(random.randint(0, 9)) if char == "#" else char for char in mask
         )
 
-    def generate_images_masked(self, count=1, blur=False, text_size=32, train=True):
+    def generate_images_masked(
+        self, count=1, blur=False, text_size=32, train=True, clear=False
+    ):
         masks = [
             "R$ #,##",
             "R$ ##,##",
@@ -60,12 +94,18 @@ class TxtRecognitionGenerator:
             for mask in masks:
                 content.append(self.apply_mask(mask))
 
-        random.shuffle(content)
+        # random.shuffle(content)
 
-        self.persist_images(content, blur, text_size, train)
+        self.persist_images(content, blur, text_size, train, clear=clear)
 
     def generate_images(
-        self, count=1, words_by_image=1, blur=False, text_size=32, train=True
+        self,
+        count=1,
+        words_by_image=1,
+        blur=False,
+        text_size=32,
+        train=True,
+        clear=False,
     ):
         words = floresta.words()
         portuguese_words: list[str] = []
@@ -90,9 +130,19 @@ class TxtRecognitionGenerator:
                 content[-1] = self.random_case(content[-1])
                 content.append(w)
 
-        self.persist_images(content, blur, text_size, train)
+        self.persist_images(content, blur, text_size, train, clear=clear)
 
-    def persist_images(self, content, blur, text_size, train):
+    def persist_images(self, content, blur, text_size, train, clear=False):
+        output_dir = self.dataset_dir / ("train" if train else "test")
+        images_dir = output_dir / "images"
+
+        if clear:
+            if output_dir.exists():
+                shutil.rmtree(output_dir)
+            os.makedirs(images_dir, exist_ok=True)
+
+        os.makedirs(images_dir, exist_ok=True)
+
         generator = GeneratorFromStrings(
             strings=content,
             fonts=self.available_fonts,
@@ -105,20 +155,24 @@ class TxtRecognitionGenerator:
             rtl=True,
         )
 
-        output_dir = self.dataset_dir / ("train" if train else "test")
-        os.makedirs(output_dir, exist_ok=True)
+        labels_file = output_dir / "labels.txt"
+        curr_number = (
+            0 if clear or not labels_file.exists() else self.get_last_number(output_dir)
+        )
 
-        with open(output_dir / "labels.txt", "a", encoding="utf-8") as f:
-            curr_number = self.get_last_number(output_dir)
-
+        mode = "w" if clear or not labels_file.exists() else "a"
+        with open(labels_file, mode, encoding="utf-8") as f:
             for i, (img, label) in enumerate(generator):
                 index = curr_number + i
                 img_name = f"{index}.png"
-                img_path = os.path.join(output_dir / "images", img_name)
-                img.save(img_path)
+                img_path = os.path.join(images_dir, img_name)
+
+                # Convert image to grayscale ("L") and optimize to keep file size very small
+                img_gray = img.convert("L")
+                img_gray.save(img_path, optimize=True)
                 f.write(f"images/{img_name}\t{label}\n")
 
-        print(f"Generated {len(content)} base words in portuguese!")
+        print(f"Generated {len(content)} images in {output_dir}!")
 
     def random_case(self, word: str):
         r = random.random()
@@ -130,8 +184,11 @@ class TxtRecognitionGenerator:
             return word.upper()
 
     def get_last_number(self, dir):
-        with open(dir / "labels.txt", "rb") as f:
-            try:  # catch OSError in case of a one line file
+        labels_path = dir / "labels.txt"
+        if not labels_path.exists():
+            return 0
+        with open(labels_path, "rb") as f:
+            try:
                 f.seek(-2, os.SEEK_END)
                 while f.read(1) != b"\n":
                     f.seek(-2, os.SEEK_CUR)
@@ -140,17 +197,23 @@ class TxtRecognitionGenerator:
             last_line = f.readline().decode()
 
             if last_line != "":
-                image_path = dir / last_line.split("\t")[0]
-                name = image_path.name.split(".png")[0]
+                parts = last_line.split("\t")
+                if len(parts) > 0:
+                    image_path = dir / parts[0]
+                    name = image_path.name.split(".png")[0]
 
-                return (int(name) + 1) if name.isdigit() else 0
+                    return (int(name) + 1) if name.isdigit() else 0
 
         return 0
 
 
 if __name__ == "__main__":
     trg = TxtRecognitionGenerator()
-    for i in range(3):
-        trg.generate_images(words_by_image=i + 1, count=100, train=False)
+    for i in range(5):
+        trg.generate_images(
+            words_by_image=i + 1, count=100, train=False, clear=(i == 0), text_size=20
+        )
 
-    trg.generate_images_masked(count=3, blur=True, train=False)
+    trg.generate_images_masked(
+        count=5, blur=True, train=False, clear=False, text_size=20
+    )
