@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import Dataset
 
+from src.utils.paths import checkpoint_path
+
 ALPHABET = (
     "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "áàãâéêíóôõúçÁÀÃÂÉÊÍÓÔÕÚÇ.,!?-:;()\"'/#$ %"
@@ -14,14 +16,11 @@ BLANK_IDX = 0  # Blank from CTC character index
 
 
 class OCRDataset(Dataset):
-    def __init__(
-        self,
-        label_file,
-        img_height=32,
-    ) -> None:
+    def __init__(self, dataset_dir, train=True, img_height=32) -> None:
         self.data = []
         self.targets = []
-        with open(label_file, "r") as f:
+        self.dataset_dir = dataset_dir / ("train" if train else "test")
+        with open(self.dataset_dir / "labels.txt", "r", encoding="utf-8") as f:
             for line in f:
                 (file_path, label) = line.strip().split("\t")
                 self.data.append(file_path)
@@ -35,17 +34,19 @@ class OCRDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.data[idx]
         label = self.targets[idx]
-        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        full_path = str(self.dataset_dir / img_path)
+        img = cv2.imread(full_path, cv2.IMREAD_GRAYSCALE)
 
-        if img is None:
-            raise FileNotFoundError(f"Error reading file {img_path} (label [{label}])")
+        if img is None or img.size == 0:
+            raise FileNotFoundError(f"Error reading file {full_path} (label [{label}])")
 
         # Proportional img resize keeping the ratio
         h, w = img.shape
-        new_w = int(w * (self.img_height / h))
-        # new_w = min(new_w, self.max_width)
-        # new_w = min(new_w, self.max_width)
-        img = cv2.resize(img, (new_w, self.img_height))
+        if h <= 0 or w <= 0:
+            raise ValueError(f"Invalid image dimensions ({h}x{w}) for {full_path}")
+
+        new_w = max(1, int(w * (self.img_height / h)))
+        img = cv2.resize(img, (int(new_w), int(self.img_height)))
 
         # Right padding to standardize width to max_width
         padded_img = torch.zeros((1, self.img_height, new_w))
@@ -60,8 +61,10 @@ class OCRDataset(Dataset):
 
 
 class CRNN(nn.Module):
-    def __init__(self, num_classes=104) -> None:
+    def __init__(self, num_classes=104, name="1.0") -> None:
         super().__init__()
+
+        self.name = name
 
         # 1. Feature Extractor (CNN)
         # Input: (B, 1, 32, img_width) -> Reduce height to 1 e width to img_width / 4 (4x width reducing)
@@ -94,10 +97,25 @@ class CRNN(nn.Module):
         features = self.cnn(x)  # (B, 256, 1, W) W = img_width / 4
         features = features.squeeze(2)  # (B, 256, W)
         features = features.permute(0, 2, 1)  # (B, W, 256) -> (Batch, Time, Feat)
-    
+
         out, _ = self.rnn(features)  # (B, W, 256)
         logits = self.fc(out)  # (B, 64, num_classes)
         return logits
+
+    def load_if_exists(self) -> bool:
+        file = checkpoint_path(self.name, "ocr")
+        if file.exists():
+            content = torch.load(file, weights_only=True)
+
+            self.load_state_dict(content["model"])
+            return True
+
+        return False
+
+    def save_model(self):
+        file = checkpoint_path(self.name, "ocr")
+        file.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({"model": self.state_dict()}, file)
 
 
 def ocr_collate_fn(batch):
@@ -113,7 +131,7 @@ def ocr_collate_fn(batch):
         _, w = img.shape[1], img.shape[2]
         pad_w = max_w - w
         # F.pad applies (left, right, top, bottom)
-        padded_img = F.pad(img, (0, pad_w, 0, 0), value=0.0)    
+        padded_img = F.pad(img, (0, pad_w, 0, 0), value=0.0)
         padded_images.append(padded_img)
 
     images_tensor = torch.stack(padded_images, dim=0)

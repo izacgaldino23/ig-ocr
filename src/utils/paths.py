@@ -7,9 +7,10 @@ TEST_IMAGE_DIR = PROJECT_ROOT / "data" / "test_images"
 DEBUG_FOLDER = PROJECT_ROOT / "data" / "debug_errors"
 
 
-def checkpoint_path(model_number: float) -> Path:
-    return CHECKPOINT_DIR / f"emnist-{model_number}.pth"
+def checkpoint_path(model_number, output_folder="") -> Path:
+    folder = CHECKPOINT_DIR if output_folder == "" else CHECKPOINT_DIR / output_folder
+    return folder / f"{model_number}.pth"
+
 
 def test_image_path(file_name: str) -> Path:
     return TEST_IMAGE_DIR / f"{file_name}"
-

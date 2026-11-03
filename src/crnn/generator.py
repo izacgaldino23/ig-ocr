@@ -29,32 +29,7 @@ class TxtRecognitionGenerator:
         self._load_system_fonts()
 
         self.dataset_dir = DATA_DIR / "words-dataset"
-        nltk.download("floresta", download_dir=self.dataset_dir / "words")
-
-        # count = 1
-        # words = floresta.words()
-        # portuguese_words: list[str] = []
-        # for w in words:
-        #     if len(portuguese_words) >= count:
-        #         break
-
-        #     if isinstance(w, str) and w.isalpha() and len(w) >= 2:
-        #         portuguese_words.append(self.random_case(w))
-
-        # self.dataset_words = portuguese_words
-
-        # self.generator = GeneratorFromStrings(
-        #     strings=self.dataset_words,
-        #     fonts=self.available_fonts,
-        #     blur=1,
-        #     random_blur=True,
-        #     random_skew=True,
-        #     count=len(self.dataset_words),
-        #     size=32,
-        #     # margins=(2, 2, 2, 2),
-        #     fit=True,
-        #     rtl=True,
-        # )
+        nltk.download("floresta", download_dir=DATA_DIR / "floresta")
 
     def _load_system_fonts(self):
         system_fonts_path = "C:\\Windows\\Fonts"
@@ -67,7 +42,7 @@ class TxtRecognitionGenerator:
             str(random.randint(0, 9)) if char == "#" else char for char in mask
         )
 
-    def generate_images_masked(self, count=1, blur=False, text_size=32):
+    def generate_images_masked(self, count=1, blur=False, text_size=32, train=True):
         masks = [
             "R$ #,##",
             "R$ ##,##",
@@ -87,9 +62,11 @@ class TxtRecognitionGenerator:
 
         random.shuffle(content)
 
-        self.persist_images(content, blur, text_size)
+        self.persist_images(content, blur, text_size, train)
 
-    def generate_images(self, count=1, words_by_image=1, blur=False, text_size=32):
+    def generate_images(
+        self, count=1, words_by_image=1, blur=False, text_size=32, train=True
+    ):
         words = floresta.words()
         portuguese_words: list[str] = []
 
@@ -113,9 +90,9 @@ class TxtRecognitionGenerator:
                 content[-1] = self.random_case(content[-1])
                 content.append(w)
 
-        self.persist_images(content, blur, text_size)
+        self.persist_images(content, blur, text_size, train)
 
-    def persist_images(self, content, blur, text_size):
+    def persist_images(self, content, blur, text_size, train):
         generator = GeneratorFromStrings(
             strings=content,
             fonts=self.available_fonts,
@@ -128,11 +105,11 @@ class TxtRecognitionGenerator:
             rtl=True,
         )
 
-        output_dir = self.dataset_dir
+        output_dir = self.dataset_dir / ("train" if train else "test")
         os.makedirs(output_dir, exist_ok=True)
 
         with open(output_dir / "labels.txt", "a", encoding="utf-8") as f:
-            curr_number = self.get_last_number()
+            curr_number = self.get_last_number(output_dir)
 
             for i, (img, label) in enumerate(generator):
                 index = curr_number + i
@@ -152,8 +129,8 @@ class TxtRecognitionGenerator:
         else:
             return word.upper()
 
-    def get_last_number(self):
-        with open(self.dataset_dir / "labels.txt", "rb") as f:
+    def get_last_number(self, dir):
+        with open(dir / "labels.txt", "rb") as f:
             try:  # catch OSError in case of a one line file
                 f.seek(-2, os.SEEK_END)
                 while f.read(1) != b"\n":
@@ -163,7 +140,7 @@ class TxtRecognitionGenerator:
             last_line = f.readline().decode()
 
             if last_line != "":
-                image_path = self.dataset_dir / last_line.split("\t")[0]
+                image_path = dir / last_line.split("\t")[0]
                 name = image_path.name.split(".png")[0]
 
                 return (int(name) + 1) if name.isdigit() else 0
@@ -173,7 +150,7 @@ class TxtRecognitionGenerator:
 
 if __name__ == "__main__":
     trg = TxtRecognitionGenerator()
-    # for i in range(4):
-    #     trg.generate_images(words_by_image=i + 1, count=100)
+    for i in range(3):
+        trg.generate_images(words_by_image=i + 1, count=100, train=False)
 
-    trg.generate_images_masked(3, True)
+    trg.generate_images_masked(count=3, blur=True, train=False)
