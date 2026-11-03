@@ -209,11 +209,18 @@ class TxtRecognitionGenerator:
 
 if __name__ == "__main__":
     trg = TxtRecognitionGenerator()
-    for i in range(5):
+    train = False
+    text_size = 20
+    blur = True
+    for i in range(2):
         trg.generate_images(
-            words_by_image=i + 1, count=100, train=False, clear=(i == 0), text_size=20
+            words_by_image=i + 1,
+            count=400,
+            blur=blur,
+            train=train,
+            clear=(i == 0),
+            text_size=text_size,
         )
-
-    trg.generate_images_masked(
-        count=5, blur=True, train=False, clear=False, text_size=20
-    )
+        trg.generate_images_masked(
+            count=1, blur=blur, train=train, clear=False, text_size=text_size
+        )

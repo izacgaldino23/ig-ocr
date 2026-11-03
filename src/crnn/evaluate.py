@@ -9,7 +9,7 @@ from src.crnn.model import (
     OCRDataset,
     ocr_collate_fn,
 )
-from src.utils.paths import DATA_DIR
+from src.utils.paths import DATA_DIR, PROJECT_ROOT
 
 
 def decode_ctc(preds):
@@ -20,9 +20,8 @@ def decode_ctc(preds):
     last_idx = BLANK_IDX
 
     for idx in pred_indices:
-        if idx != BLANK_IDX and idx != last_idx:
-            if idx in IDX2CHAR:
-                decoded_text.append(IDX2CHAR[idx])
+        if idx != BLANK_IDX and idx != last_idx and idx in IDX2CHAR:
+            decoded_text.append(IDX2CHAR[idx])
         last_idx = idx
 
     return "".join(decoded_text)
@@ -53,8 +52,10 @@ if __name__ == "__main__":
     correct_count = 0
     total = 0
 
+    errors = []
+
     with torch.inference_mode():
-        for images, labels, target_lengths in test_loader:
+        for images, labels, target_lengths, input_lengths in test_loader:
             images = images.to(device, non_blocking=True)
 
             # Forward Pass: retorna (B, T, Num_Classes)
@@ -72,13 +73,19 @@ if __name__ == "__main__":
                 )
 
                 # Decodifica a predição da amostra i
-                pred_text = decode_ctc(preds[i])
+                pred_text = decode_ctc(preds[i, : input_lengths[i]])
 
                 if pred_text == gt_text:
                     correct_count += 1
+                else:
+                    errors.append(f"got [{pred_text}] expected: [{gt_text}]\n")
                 total += 1
 
             torch.cuda.empty_cache()
+
+    errors_file = PROJECT_ROOT / "evaluate_errors.txt"
+    with open(errors_file, "w", encoding="utf-8") as f:
+        f.writelines(errors)
 
     accuracy = (correct_count / total) * 100 if total > 0 else 0.0
     print(

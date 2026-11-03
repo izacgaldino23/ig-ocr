@@ -108,8 +108,10 @@ class CRNN(nn.Module):
             content = torch.load(file, weights_only=True)
 
             self.load_state_dict(content["model"])
+            print(f"Model {self.name} was loaded")
             return True
 
+        print(f"Model {self.name} doesn't exist")
         return False
 
     def save_model(self):
@@ -121,6 +123,7 @@ class CRNN(nn.Module):
 def ocr_collate_fn(batch):
     # batch: list of tuples (img_tensor, target_tensor, target_length)
     images, targets, target_lengths = zip(*batch)
+    input_lengths = torch.tensor([img.shape[2] // 4 for img in images])
 
     # 1. Finds the maximum width within THIS specific batch
     max_w = max(img.shape[2] for img in images)
@@ -131,10 +134,11 @@ def ocr_collate_fn(batch):
         _, w = img.shape[1], img.shape[2]
         pad_w = max_w - w
         # F.pad applies (left, right, top, bottom)
-        padded_img = F.pad(img, (0, pad_w, 0, 0), value=0.0)
+        # padded_img = F.pad(img, (0, pad_w, 0, 0), value=1.0)
+        padded_img = F.pad(img, (0, pad_w, 0, 0), mode="replicate")
         padded_images.append(padded_img)
 
     images_tensor = torch.stack(padded_images, dim=0)
     targets_tensor = torch.cat(targets, dim=0)
 
-    return images_tensor, targets_tensor, torch.tensor(target_lengths)
+    return images_tensor, targets_tensor, torch.tensor(target_lengths), input_lengths
