@@ -92,7 +92,8 @@ class Train:
                     log_probability, labels, input_lengths, target_lengths
                 )
 
-                debug_batch = batch_idx == total_batches
+                # debug_batch = batch_idx == total_batches
+                debug_batch = False
                 if epoch == 0 and batch_idx == 1:
                     print(
                         f"Device Debug | model={next(self.model.parameters()).device} "
@@ -176,10 +177,10 @@ class Train:
                 f"LR: {scheduler.get_last_lr()[0]:.6f} ==="
             )
 
-        self.model.save_model(self.output_name)
-        print(f"Model saved successfully as {self.model_name}")
+        output_model = self.model.save_model(self.output_name)
+        print(f"Model saved successfully as {output_model}")
 
 
 if __name__ == "__main__":
     train = Train("0.2", batch_size=32)
-    train.execute(epochs=50)
+    train.execute(epochs=25)

@@ -137,6 +137,8 @@ class CRNN(nn.Module):
         file.parent.mkdir(parents=True, exist_ok=True)
         torch.save({"model": self.state_dict()}, file)
 
+        return name
+
 
 gpu_augmentations = v2.Compose(
     [
