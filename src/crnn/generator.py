@@ -1,12 +1,15 @@
 import glob
+import io
 import os
 import random
 import shutil
 
+import lmdb
 import nltk
 from fontTools.ttLib import TTFont, TTLibError
 from nltk.corpus import floresta
 from PIL import ImageFont
+from PIL.Image import Image
 from trdg.generators import GeneratorFromStrings
 
 from src.crnn.model import ALPHABET
@@ -75,12 +78,12 @@ class TxtRecognitionGenerator:
                     valid_fonts.append(font_path)
                     style = (
                         bool(
-                            (os2 and os2.fsSelection & (1 << 5))
-                            or (head and head.macStyle & 1)
+                            (os2 and os2.fsSelection & (1 << 5))  # type: ignore
+                            or (head and head.macStyle & 1)  # type: ignore
                         ),
                         bool(
-                            (os2 and os2.fsSelection & 1)
-                            or (head and head.macStyle & 2)
+                            (os2 and os2.fsSelection & 1)  # type: ignore
+                            or (head and head.macStyle & 2)  # type: ignore
                         ),
                     )
                     valid_fonts_by_style[style].append(font_path)
@@ -214,14 +217,11 @@ class TxtRecognitionGenerator:
         italic=None,
     ):
         output_dir = self.dataset_dir / ("train" if train else "test")
-        images_dir = output_dir / "images"
+        lmdb_path = str(output_dir / "lmdb_data")
 
-        if clear:
-            if output_dir.exists():
-                shutil.rmtree(output_dir)
-            os.makedirs(images_dir, exist_ok=True)
-
-        os.makedirs(images_dir, exist_ok=True)
+        if clear and output_dir.exists():
+            shutil.rmtree(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
 
         generator = GeneratorFromStrings(
             strings=content,
@@ -236,24 +236,49 @@ class TxtRecognitionGenerator:
             character_spacing=letter_spacing,
         )
 
-        labels_file = output_dir / "labels.txt"
-        curr_number = (
-            0 if clear or not labels_file.exists() else self.get_last_number(output_dir)
-        )
+        map_size = 500 * 1024 * 1024
+        env = lmdb.open(lmdb_path, map_size=map_size)
 
-        mode = "w" if clear or not labels_file.exists() else "a"
-        with open(labels_file, mode, encoding="utf-8") as f:
-            for i, (img, label) in enumerate(generator):
-                index = curr_number + i
-                img_name = f"{index}.png"
-                img_path = os.path.join(images_dir, img_name)
+        with env.begin(write=False) as txn:
+            num_samples_ptr = txn.get(b"num-samples")
+            curr_number = (
+                0
+                if (clear or num_samples_ptr is None)
+                else int(num_samples_ptr.decode("utf-8"))
+            )
 
-                # Convert image to grayscale ("L") and optimize to keep file size very small
-                img_gray = img.convert("L")
-                img_gray.save(img_path, optimize=True)
-                f.write(f"images/{img_name}\t{label}\n")
+        txn = env.begin(write=True)
+        count = 0
 
-        print(f"Generated {len(content)} images in {output_dir}!")
+        for i, (img, label) in enumerate(generator):
+            if not isinstance(img, Image):
+                continue
+
+            index = curr_number + count + 1
+
+            img_gray = img.convert("L")
+            img_buffer = io.BytesIO()
+            img_gray.save(img_buffer, format="PNG", optimize=True)
+            img_bytes = img_buffer.getvalue()
+
+            image_key = f"image-{index:09d}".encode()
+            label_key = f"label-{index:09d}".encode()
+
+            txn.put(image_key, img_bytes)
+            txn.put(label_key, label.encode("utf-8"))
+
+            count += 1
+
+            if count % 1000 == 0:
+                txn.commit()
+                txn = env.begin(write=True)
+
+        total_samples = curr_number + count
+        txn.put(b"num-samples", str(total_samples).encode("utf-8"))
+        txn.commit()
+        env.close()
+
+        print(f"Added {count} samples into LMDB on {lmdb_path}. Total: {total_samples}")
 
     def random_case(self, word: str):
         r = random.random()
@@ -311,10 +336,10 @@ if __name__ == "__main__":
         clear = True
         for style_idx, style in enumerate(styles):
             for i, qtd in enumerate(words_by_image):
-                word_count = words // len(styles) + (style_idx < words % len(styles))
-                custom_count = custom // len(styles) + (
-                    style_idx < custom % len(styles)
-                )
+                # word_count = words // len(styles) + (style_idx < words % len(styles))
+                # custom_count = custom // len(styles) + (
+                #     style_idx < custom % len(styles)
+                # )
                 trg.generate_images(
                     words_by_image=qtd,
                     count=words,

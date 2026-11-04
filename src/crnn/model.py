@@ -1,4 +1,5 @@
 import cv2
+import lmdb
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -19,33 +20,66 @@ BLANK_IDX = 0  # Blank from CTC character index
 
 class OCRDataset(Dataset):
     def __init__(self, dataset_dir, train=True, img_height=32) -> None:
-        self.data = []
-        self.targets = []
         self.dataset_dir = dataset_dir / ("train" if train else "test")
-        with open(self.dataset_dir / "labels.txt", "r", encoding="utf-8") as f:
-            for line in f:
-                (file_path, label) = line.strip().split("\t")
-                self.data.append(file_path)
-                self.targets.append(label)
-
+        self.lmdb_path = str(self.dataset_dir / "lmdb_data")
         self.img_height = img_height
 
+        env = lmdb.open(
+            self.lmdb_path,
+            readonly=True,
+            lock=False,
+            readahead=False,
+            meminit=False,
+        )
+        with env.begin(write=False) as txn:
+            num_samples_ptr = txn.get(b"num-samples")
+            if num_samples_ptr is None:
+                raise ValueError(f"Base LMDB não encontrada ou sem 'num-samples' em {self.lmdb_path}")
+            self.num_samples = int(num_samples_ptr.decode("utf-8"))
+        env.close()
+
+    def _init_db(self):
+        self.env = lmdb.open(
+            self.lmdb_path,
+            readonly=True,
+            lock=False,
+            readahead=False,
+            meminit=False,
+        )
+
     def __len__(self):
-        return len(self.data)
+        return self.num_samples
 
     def __getitem__(self, idx):
-        img_path = self.data[idx]
-        label = self.targets[idx]
-        full_path = str(self.dataset_dir / img_path)
-        img = cv2.imread(full_path, cv2.IMREAD_GRAYSCALE)
+        if self.env is None:
+            self._init_db()
+
+        index = idx + 1
+        image_key = f"image-{index:09d}"
+        label_key = f"label-{index:09d}"
+
+        with self.env.begin(write=False) as txn:
+            img_bytes = txn.get(image_key.encode("utf-8"))
+            label_bytes = txn.get(label_key.encode("utf-8"))
+
+        if img_bytes is None or label_bytes is None:
+            raise KeyError(f"Key {index} not found in LMDB database")
+
+        label = label_bytes.decode("utf-8")
+
+        # Decode memory buffer directly to Grayscale via OpenCV
+        import numpy as np
+
+        img_np = np.frombuffer(img_bytes, dtype=np.uint8)
+        img = cv2.imdecode(img_np, cv2.IMREAD_GRAYSCALE)
 
         if img is None or img.size == 0:
-            raise FileNotFoundError(f"Error reading file {full_path} (label [{label}])")
+            raise FileNotFoundError(f"Error decoding image for index {index} (label [{label}])")
 
         # Proportional img resize keeping the ratio
         h, w = img.shape
         if h <= 0 or w <= 0:
-            raise ValueError(f"Invalid image dimensions ({h}x{w}) for {full_path}")
+            raise ValueError(f"Invalid image dimensions ({h}x{w}) for {index}")
 
         new_w = max(1, int(w * (self.img_height / h)))
         img = cv2.resize(img, (int(new_w), int(self.img_height)))
