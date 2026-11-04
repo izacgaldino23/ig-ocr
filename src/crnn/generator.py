@@ -4,13 +4,13 @@ import os
 import random
 import shutil
 
-import lmdb
 import nltk
 from fontTools.ttLib import TTFont, TTLibError
 from nltk.corpus import floresta
 from PIL import ImageFont
 from PIL.Image import Image
 from trdg.generators import GeneratorFromStrings
+from webdataset.writer import TarWriter
 
 from src.crnn.model import ALPHABET
 from src.utils.paths import DATA_DIR
@@ -217,7 +217,6 @@ class TxtRecognitionGenerator:
         italic=None,
     ):
         output_dir = self.dataset_dir / ("train" if train else "test")
-        lmdb_path = str(output_dir / "lmdb_data")
 
         if clear and output_dir.exists():
             shutil.rmtree(output_dir)
@@ -236,49 +235,44 @@ class TxtRecognitionGenerator:
             character_spacing=letter_spacing,
         )
 
-        map_size = 500 * 1024 * 1024
-        env = lmdb.open(lmdb_path, map_size=map_size)
-
-        with env.begin(write=False) as txn:
-            num_samples_ptr = txn.get(b"num-samples")
-            curr_number = (
-                0
-                if (clear or num_samples_ptr is None)
-                else int(num_samples_ptr.decode("utf-8"))
+        shard_index = (
+            max(
+                (
+                    int(path.stem.removeprefix("shard-"))
+                    for path in output_dir.glob("shard-*.tar")
+                ),
+                default=-1,
             )
-
-        txn = env.begin(write=True)
+            + 1
+        )
+        shard_path = output_dir / f"shard-{shard_index:06d}.tar"
+        temporary_path = output_dir / f".shard-{shard_index:06d}.tar.tmp"
         count = 0
 
-        for i, (img, label) in enumerate(generator):
-            if not isinstance(img, Image):
-                continue
+        with TarWriter(f"file:{temporary_path.resolve().as_posix()}") as sink:
+            for img, label in generator:
+                if not isinstance(img, Image):
+                    continue
 
-            index = curr_number + count + 1
+                img_gray = img.convert("L")
+                img_buffer = io.BytesIO()
+                img_gray.save(img_buffer, format="PNG", optimize=True)
 
-            img_gray = img.convert("L")
-            img_buffer = io.BytesIO()
-            img_gray.save(img_buffer, format="PNG", optimize=True)
-            img_bytes = img_buffer.getvalue()
+                sink.write(
+                    {
+                        "__key__": f"{shard_index:06d}_{count:09d}",
+                        "png": img_buffer.getvalue(),
+                        "txt": label,
+                    }
+                )
+                count += 1
 
-            image_key = f"image-{index:09d}".encode()
-            label_key = f"label-{index:09d}".encode()
+        if count:
+            temporary_path.replace(shard_path)
+        else:
+            temporary_path.unlink()
 
-            txn.put(image_key, img_bytes)
-            txn.put(label_key, label.encode("utf-8"))
-
-            count += 1
-
-            if count % 1000 == 0:
-                txn.commit()
-                txn = env.begin(write=True)
-
-        total_samples = curr_number + count
-        txn.put(b"num-samples", str(total_samples).encode("utf-8"))
-        txn.commit()
-        env.close()
-
-        print(f"Added {count} samples into LMDB on {lmdb_path}. Total: {total_samples}")
+        print(f"Added {count} samples into WebDataset shard {shard_path}")
 
     def random_case(self, word: str):
         r = random.random()
@@ -288,29 +282,6 @@ class TxtRecognitionGenerator:
             return word.capitalize()
         else:
             return word.upper()
-
-    def get_last_number(self, dir):
-        labels_path = dir / "labels.txt"
-        if not labels_path.exists():
-            return 0
-        with open(labels_path, "rb") as f:
-            try:
-                f.seek(-2, os.SEEK_END)
-                while f.read(1) != b"\n":
-                    f.seek(-2, os.SEEK_CUR)
-            except OSError:
-                f.seek(0)
-            last_line = f.readline().decode()
-
-            if last_line != "":
-                parts = last_line.split("\t")
-                if len(parts) > 0:
-                    image_path = dir / parts[0]
-                    name = image_path.name.split(".png")[0]
-
-                    return (int(name) + 1) if name.isdigit() else 0
-
-        return 0
 
 
 if __name__ == "__main__":
