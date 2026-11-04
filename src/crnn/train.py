@@ -1,8 +1,9 @@
 from datetime import datetime
+from functools import partial
+from time import perf_counter
 
 import torch
 from torch import nn, optim
-from torch.nn import functional as F
 from torch.utils.data import DataLoader, random_split
 
 from src.crnn.model import (
@@ -11,7 +12,6 @@ from src.crnn.model import (
     CRNN,
     IDX2CHAR,
     OCRDataset,
-    gpu_augmentations,
     ocr_collate_fn,
 )
 from src.utils.paths import DATA_DIR
@@ -23,7 +23,7 @@ class Train:
         model_name,
         output_name="",
         batch_size=32,
-        workers=4,
+        workers=2,
         learning_rate=1e-5,
     ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -56,7 +56,7 @@ class Train:
             batch_size=batch_size,
             num_workers=workers,
             persistent_workers=workers > 0,
-            collate_fn=ocr_collate_fn,
+            collate_fn=partial(ocr_collate_fn, augment=True),
         )
         self.validation_dataloader = DataLoader(
             validation_data,
@@ -76,7 +76,7 @@ class Train:
         self.model.eval()
         correct = 0
         total = 0
-        loss_sum = 0.0
+        loss_sum = torch.zeros((), device=self.device)
         with torch.inference_mode():
             for (
                 images,
@@ -86,26 +86,33 @@ class Train:
                 _,
             ) in self.validation_dataloader:
                 images = images.to(self.device, non_blocking=True)
+                labels_cpu = labels
                 labels = labels.to(self.device, non_blocking=True)
                 logits = self.model(images, input_lengths)
                 log_probs = logits.log_softmax(dim=2).permute(1, 0, 2)
                 loss = self.criterion(log_probs, labels, input_lengths, target_lengths)
-                loss_sum += loss.item() * images.size(0)
+                loss_sum += loss * images.size(0)
 
+                predictions = logits.argmax(dim=2).cpu()
+                target_lengths_list = target_lengths.tolist()
+                input_lengths_list = input_lengths.tolist()
                 start = 0
-                for i, target_length in enumerate(target_lengths.tolist()):
-                    target = labels[start : start + target_length].tolist()
+                for i, target_length in enumerate(target_lengths_list):
+                    target = labels_cpu[start : start + target_length].tolist()
                     start += target_length
                     previous = BLANK_IDX
                     prediction = []
-                    for index in logits[i, : input_lengths[i]].argmax(dim=1).tolist():
+                    for index in predictions[i, : input_lengths_list[i]].tolist():
                         if index != BLANK_IDX and index != previous:
                             prediction.append(IDX2CHAR.get(index, ""))
                         previous = index
                     correct += prediction == [IDX2CHAR[index] for index in target]
                     total += 1
 
-        return correct / total if total else 0.0, loss_sum / total if total else 0.0
+        return (
+            correct / total if total else 0.0,
+            loss_sum.item() / total if total else 0.0,
+        )
 
     def execute(self, epochs=10):
         total_batches = len(self.dataloader)
@@ -118,7 +125,8 @@ class Train:
 
         for epoch in range(epochs):
             self.model.train()
-            epoch_loss = 0.0
+            epoch_loss = torch.zeros((), device=self.device)
+            epoch_started = perf_counter()
             for batch_idx, (
                 images,
                 labels,
@@ -129,17 +137,6 @@ class Train:
                 cpu_images_pinned = images.is_pinned()
                 images = images.to(self.device, non_blocking=True)
                 labels = labels.to(self.device, non_blocking=True)
-                augmented_images = []
-                for image, width in zip(images, image_widths.tolist()):
-                    image = gpu_augmentations(image[:, :, :width])
-                    augmented_images.append(
-                        F.pad(
-                            image,
-                            (0, images.shape[-1] - width, 0, 0),
-                            mode="replicate",
-                        )
-                    )
-                images = torch.stack(augmented_images)
 
                 # Forward Pass
                 batch_logits = self.model(images, input_lengths)
@@ -170,13 +167,15 @@ class Train:
 
                 self.optimizer.step()
 
-                epoch_loss += loss.item()
+                epoch_loss += loss.detach()
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                if batch_idx == 1 or batch_idx == total_batches:
+                if batch_idx == 1 or batch_idx % 25 == 0 or batch_idx == total_batches:
+                    elapsed = perf_counter() - epoch_started
                     print(
                         f"[{current_time}] Epoch [{epoch + 1}/{epochs}] | "
                         f"Batch [{batch_idx}/{total_batches}] | "
-                        f"Loss: {loss.item():.4f}"
+                        f"Loss: {loss.item():.4f} | "
+                        f"Elapsed: {elapsed / 60:.1f} min"
                     )
 
             validation_accuracy, validation_loss = self._validate()
@@ -194,7 +193,9 @@ class Train:
                 self.model.save_model(self.output_name)
 
             scheduler.step()
-            avg_loss = epoch_loss / total_batches if total_batches > 0 else 0.0
+            avg_loss = (
+                epoch_loss.item() / total_batches if total_batches > 0 else 0.0
+            )
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(
                 f"[{current_time}] === End of Epoch {epoch + 1}/{epochs} | "
@@ -215,5 +216,5 @@ class Train:
 
 
 if __name__ == "__main__":
-    train = Train("0.3", output_name="0.4", batch_size=64)
+    train = Train("0.3", output_name="0.4", batch_size=32)
     train.execute(epochs=50)

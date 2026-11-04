@@ -1,13 +1,14 @@
-from pathlib import Path
+import os
+import tarfile
 
 import cv2
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import Dataset
 from torchvision.transforms import v2
-from webdataset.compat import WebDataset
 
 from src.utils.paths import checkpoint_path
 
@@ -29,31 +30,63 @@ class OCRDataset(Dataset):
         if not shards:
             raise ValueError(f"Base WebDataset não encontrada em {self.dataset_dir}")
 
-        self.samples = list(
-            WebDataset(
-                [f"file:{shard.resolve().as_posix()}" for shard in shards],
-                shardshuffle=False,
-            )
-        )
+        self.samples = []
+        self.data = []
+        self._shard_files = {}
+        self._pid = os.getpid()
+
+        for shard in shards:
+            samples = {}
+            with tarfile.open(shard, mode="r:") as archive:
+                for member in archive:
+                    if not member.isfile():
+                        continue
+                    key, separator, extension = member.name.rpartition(".")
+                    if separator and extension in {"png", "txt"}:
+                        samples.setdefault(key, {})[extension] = (
+                            member.offset_data,
+                            member.size,
+                        )
+
+            for key, members in samples.items():
+                if "png" not in members or "txt" not in members:
+                    raise ValueError(f"Amostra incompleta '{key}' no shard {shard}")
+                image_offset, image_size = members["png"]
+                label_offset, label_size = members["txt"]
+                self.samples.append(
+                    (shard, image_offset, image_size, label_offset, label_size)
+                )
+                self.data.append(f"{shard.name}/{key}.png")
+
         if not self.samples:
             raise ValueError(f"Base WebDataset sem amostras em {self.dataset_dir}")
 
         self.num_samples = len(self.samples)
-        self.data = [
-            f"{Path(sample['__url__']).name}/{sample['__key__']}.png"
-            for sample in self.samples
-        ]
 
     def __len__(self):
         return self.num_samples
 
-    def __getitem__(self, idx):
-        sample = self.samples[idx]
-        img_bytes = sample["png"]
-        label = sample["txt"].decode("utf-8")
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state["_shard_files"] = {}
+        state["_pid"] = None
+        return state
 
-        # Decode memory buffer directly to Grayscale via OpenCV
-        import numpy as np
+    def __getitem__(self, idx):
+        shard, image_offset, image_size, label_offset, label_size = self.samples[idx]
+        if self._pid != os.getpid():
+            self._shard_files = {}
+            self._pid = os.getpid()
+
+        shard_file = self._shard_files.get(shard)
+        if shard_file is None:
+            shard_file = open(shard, "rb")  # noqa: SIM115 - reused for this shard
+            self._shard_files[shard] = shard_file
+
+        shard_file.seek(image_offset)
+        img_bytes = shard_file.read(image_size)
+        shard_file.seek(label_offset)
+        label = shard_file.read(label_size).decode("utf-8")
 
         img_np = np.frombuffer(img_bytes, dtype=np.uint8)
         img = cv2.imdecode(img_np, cv2.IMREAD_GRAYSCALE)
@@ -71,16 +104,13 @@ class OCRDataset(Dataset):
         new_w = max(1, int(w * (self.img_height / h)))
         img = cv2.resize(img, (int(new_w), int(self.img_height)))
 
-        # Right padding to standardize width to max_width
-        padded_img = torch.zeros((1, self.img_height, new_w))
-        img_tensor = torch.from_numpy(img).float() / 255.0
-        padded_img[0, :, :new_w] = img_tensor
+        img_tensor = torch.from_numpy(img).unsqueeze(0).float().div_(255)
 
         # Convert text to numerical indices
         target = [CHAR2IDX[c] for c in label if c in CHAR2IDX]
         target_length = len(target)
 
-        return padded_img, torch.tensor(target, dtype=torch.long), target_length
+        return img_tensor, torch.tensor(target, dtype=torch.long), target_length
 
 
 class CRNN(nn.Module):
@@ -161,7 +191,7 @@ class CRNN(nn.Module):
         return name
 
 
-gpu_augmentations = v2.Compose(
+image_augmentations = v2.Compose(
     [
         v2.RandomApply(
             [
@@ -181,9 +211,12 @@ gpu_augmentations = v2.Compose(
 )
 
 
-def ocr_collate_fn(batch):
+def ocr_collate_fn(batch, augment=False):
     # batch: list of tuples (img_tensor, target_tensor, target_length)
     images, targets, target_lengths = zip(*batch)
+    if augment:
+        images = [image_augmentations(img) for img in images]
+
     image_widths = torch.tensor([img.shape[2] for img in images])
     input_lengths = torch.tensor([img.shape[2] // 4 for img in images])
 
