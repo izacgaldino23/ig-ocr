@@ -56,6 +56,9 @@ class TxtRecognitionGenerator:
         required_codepoints = {ord(char) for char in ALPHABET}
 
         valid_fonts = []
+        valid_fonts_by_style = {
+            (bold, italic): [] for bold in (False, True) for italic in (False, True)
+        }
         for font_path in all_fonts:
             basename = os.path.basename(font_path).lower()
             if any(exc in basename for exc in excluded_keywords):
@@ -66,8 +69,21 @@ class TxtRecognitionGenerator:
                     continue
                 with TTFont(font_path, lazy=True) as tt_font:
                     cmap = tt_font.getBestCmap() or {}
+                    os2 = tt_font.get("OS/2")
+                    head = tt_font.get("head")
                 if required_codepoints.issubset(cmap):
                     valid_fonts.append(font_path)
+                    style = (
+                        bool(
+                            (os2 and os2.fsSelection & (1 << 5))
+                            or (head and head.macStyle & 1)
+                        ),
+                        bool(
+                            (os2 and os2.fsSelection & 1)
+                            or (head and head.macStyle & 2)
+                        ),
+                    )
+                    valid_fonts_by_style[style].append(font_path)
             except (OSError, TTLibError, KeyError, ValueError) as exc:
                 print(f"font {font_path} invalid: {exc}")
 
@@ -75,6 +91,24 @@ class TxtRecognitionGenerator:
             raise RuntimeError("No system fonts support the complete OCR alphabet")
 
         self.available_fonts = valid_fonts
+        self.available_fonts_by_style = valid_fonts_by_style
+
+    def _fonts_for_style(self, bold=None, italic=None):
+        fonts = [
+            font
+            for (
+                font_bold,
+                font_italic,
+            ), style_fonts in self.available_fonts_by_style.items()
+            if (bold is None or bold == font_bold)
+            and (italic is None or italic == font_italic)
+            for font in style_fonts
+        ]
+        if not fonts:
+            raise RuntimeError(
+                f"No compatible fonts found for bold={bold}, italic={italic}"
+            )
+        return fonts
 
     def apply_mask(self, mask: str):
         return "".join(
@@ -82,7 +116,15 @@ class TxtRecognitionGenerator:
         )
 
     def generate_images_masked(
-        self, count=1, blur=False, text_size=32, train=True, clear=False
+        self,
+        count=1,
+        blur=False,
+        text_size=32,
+        train=True,
+        clear=False,
+        letter_spacing=0,
+        bold=None,
+        italic=None,
     ):
         masks = [
             "R$ #,##",
@@ -103,7 +145,16 @@ class TxtRecognitionGenerator:
 
         # random.shuffle(content)
 
-        self.persist_images(content, blur, text_size, train, clear=clear)
+        self.persist_images(
+            content,
+            blur,
+            text_size,
+            train,
+            clear=clear,
+            letter_spacing=letter_spacing,
+            bold=bold,
+            italic=italic,
+        )
 
     def generate_images(
         self,
@@ -113,6 +164,9 @@ class TxtRecognitionGenerator:
         text_size=32,
         train=True,
         clear=False,
+        letter_spacing=0,
+        bold=None,
+        italic=None,
     ):
         words = floresta.words()
         portuguese_words: list[str] = []
@@ -137,9 +191,28 @@ class TxtRecognitionGenerator:
                 content[-1] = self.random_case(content[-1])
                 content.append(w)
 
-        self.persist_images(content, blur, text_size, train, clear=clear)
+        self.persist_images(
+            content,
+            blur,
+            text_size,
+            train,
+            clear=clear,
+            letter_spacing=letter_spacing,
+            bold=bold,
+            italic=italic,
+        )
 
-    def persist_images(self, content, blur, text_size, train, clear=False):
+    def persist_images(
+        self,
+        content,
+        blur,
+        text_size,
+        train,
+        clear=False,
+        letter_spacing=0,
+        bold=None,
+        italic=None,
+    ):
         output_dir = self.dataset_dir / ("train" if train else "test")
         images_dir = output_dir / "images"
 
@@ -152,7 +225,7 @@ class TxtRecognitionGenerator:
 
         generator = GeneratorFromStrings(
             strings=content,
-            fonts=self.available_fonts,
+            fonts=self._fonts_for_style(bold, italic),
             blur=1 if blur else 0,
             random_blur=blur,
             random_skew=True,
@@ -160,6 +233,7 @@ class TxtRecognitionGenerator:
             size=text_size,
             fit=True,
             rtl=True,
+            character_spacing=letter_spacing,
         )
 
         labels_file = output_dir / "labels.txt"
@@ -220,20 +294,41 @@ if __name__ == "__main__":
     text_size = 32
     blur = False
 
-    words_by_image = [3, 4]
+    words_by_image = [i + 1 for i in range(8)]
+    styles = [
+        {"letter_spacing": 0, "bold": False, "italic": False},
+        {"letter_spacing": 0, "bold": True, "italic": False},
+        {"letter_spacing": 0, "bold": False, "italic": True},
+        {"letter_spacing": 1, "bold": True, "italic": True},
+    ]
+
+    words_count = 300
+    custom_count = 75
 
     for train in [True, False]:
-        count_words = 400 if train else 200
-        count_custom = 20 if train else 10  # x * 8
-        for i, qtd in enumerate(words_by_image):
-            trg.generate_images(
-                words_by_image=qtd,
-                count=count_words,
+        words = words_count if train else int(words_count / 3)
+        custom = custom_count if train else int(custom_count / 3)  # x * 8
+        clear = True
+        for style_idx, style in enumerate(styles):
+            for i, qtd in enumerate(words_by_image):
+                word_count = words // len(styles) + (style_idx < words % len(styles))
+                custom_count = custom // len(styles) + (
+                    style_idx < custom % len(styles)
+                )
+                trg.generate_images(
+                    words_by_image=qtd,
+                    count=words,
+                    blur=blur,
+                    train=train,
+                    text_size=text_size,
+                    clear=clear,
+                    **style,
+                )
+                clear = False
+            trg.generate_images_masked(
+                count=custom,
                 blur=blur,
                 train=train,
-                # clear=(i == 0),
                 text_size=text_size,
-            )
-            trg.generate_images_masked(
-                count=count_custom, blur=blur, train=train, text_size=text_size
+                **style,
             )

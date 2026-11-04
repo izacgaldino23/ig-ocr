@@ -3,8 +3,7 @@ from datetime import datetime
 import torch
 from torch import nn, optim
 from torch.nn import functional as F
-from torch.utils.data import DataLoader
-from torchvision.transforms import v2
+from torch.utils.data import DataLoader, random_split
 
 from src.crnn.model import (
     BLANK_IDX,
@@ -19,22 +18,49 @@ from src.utils.paths import DATA_DIR
 
 
 class Train:
-    def __init__(self, model_name, output_name="", batch_size=32, workers=4) -> None:
+    def __init__(
+        self,
+        model_name,
+        output_name="",
+        batch_size=32,
+        workers=4,
+        learning_rate=1e-5,
+    ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = CRNN(len(CHAR2IDX) + 1, model_name)
         self.criterion = nn.CTCLoss(blank=BLANK_IDX, zero_infinity=True)
         self.optimizer = optim.AdamW(
-            self.model.parameters(), lr=0.0001, weight_decay=1e-5
+            self.model.parameters(), lr=learning_rate, weight_decay=1e-5
         )
         self.model_name = model_name
         self.output_name = output_name
 
         dataset_dir = DATA_DIR / "words-dataset"
-
         self.dataset = OCRDataset(dataset_dir, train=True)
-        self.dataloader = DataLoader(
+        if len(self.dataset) < 2:
+            raise ValueError(
+                "At least two training samples are required for validation"
+            )
+
+        validation_size = max(1, round(len(self.dataset) * 0.1))
+        training_size = len(self.dataset) - validation_size
+        training_data, validation_data = random_split(
             self.dataset,
+            (training_size, validation_size),
+            generator=torch.Generator().manual_seed(42),
+        )
+        self.dataloader = DataLoader(
+            training_data,
             shuffle=True,
+            pin_memory=self.device.type == "cuda",
+            batch_size=batch_size,
+            num_workers=workers,
+            persistent_workers=workers > 0,
+            collate_fn=ocr_collate_fn,
+        )
+        self.validation_dataloader = DataLoader(
+            validation_data,
+            shuffle=False,
             pin_memory=self.device.type == "cuda",
             batch_size=batch_size,
             num_workers=workers,
@@ -46,16 +72,52 @@ class Train:
         self.model.load_if_exists()
         self.model.to(self.device)
 
-    def execute(self, epochs=5):
-        self.model.train()
-        total_batches = len(self.dataloader)
+    def _validate(self):
+        self.model.eval()
+        correct = 0
+        total = 0
+        loss_sum = 0.0
+        with torch.inference_mode():
+            for (
+                images,
+                labels,
+                target_lengths,
+                input_lengths,
+                _,
+            ) in self.validation_dataloader:
+                images = images.to(self.device, non_blocking=True)
+                labels = labels.to(self.device, non_blocking=True)
+                logits = self.model(images, input_lengths)
+                log_probs = logits.log_softmax(dim=2).permute(1, 0, 2)
+                loss = self.criterion(log_probs, labels, input_lengths, target_lengths)
+                loss_sum += loss.item() * images.size(0)
 
-        # Simple learning rate scheduler without requiring validation
+                start = 0
+                for i, target_length in enumerate(target_lengths.tolist()):
+                    target = labels[start : start + target_length].tolist()
+                    start += target_length
+                    previous = BLANK_IDX
+                    prediction = []
+                    for index in logits[i, : input_lengths[i]].argmax(dim=1).tolist():
+                        if index != BLANK_IDX and index != previous:
+                            prediction.append(IDX2CHAR.get(index, ""))
+                        previous = index
+                    correct += prediction == [IDX2CHAR[index] for index in target]
+                    total += 1
+
+        return correct / total if total else 0.0, loss_sum / total if total else 0.0
+
+    def execute(self, epochs=10):
+        total_batches = len(self.dataloader)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=epochs, eta_min=1e-6
         )
+        best_accuracy = -1.0
+        best_validation_loss = float("inf")
+        best_weights = None
 
         for epoch in range(epochs):
+            self.model.train()
             epoch_loss = 0.0
             for batch_idx, (
                 images,
@@ -168,19 +230,41 @@ class Train:
                         f"Loss: {loss.item():.4f}"
                     )
 
+            validation_accuracy, validation_loss = self._validate()
+            is_best = validation_accuracy > best_accuracy or (
+                validation_accuracy == best_accuracy
+                and validation_loss < best_validation_loss
+            )
+            if is_best:
+                best_accuracy = validation_accuracy
+                best_validation_loss = validation_loss
+                best_weights = {
+                    key: value.detach().cpu().clone()
+                    for key, value in self.model.state_dict().items()
+                }
+                self.model.save_model(self.output_name)
+
             scheduler.step()
             avg_loss = epoch_loss / total_batches if total_batches > 0 else 0.0
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(
                 f"[{current_time}] === End of Epoch {epoch + 1}/{epochs} | "
                 f"Average Loss: {avg_loss:.4f} | "
-                f"LR: {scheduler.get_last_lr()[0]:.6f} ==="
+                f"Val Accuracy: {validation_accuracy:.2%} | "
+                f"Val Loss: {validation_loss:.4f} | "
+                f"LR: {scheduler.get_last_lr()[0]:.6f}"
+                f"{' | Best checkpoint' if is_best else ''} ==="
             )
 
-        output_model = self.model.save_model(self.output_name)
-        print(f"Model saved successfully as {output_model}")
+        if best_weights is None:
+            raise RuntimeError("Training completed without a validation checkpoint")
+        self.model.load_state_dict(best_weights)
+        print(
+            f"Best model saved as {self.output_name or self.model_name} "
+            f"with validation accuracy {best_accuracy:.2%}"
+        )
 
 
 if __name__ == "__main__":
-    train = Train("0.2", batch_size=32)
-    train.execute(epochs=25)
+    train = Train("0.2", output_name="0.3", batch_size=32)
+    train.execute(epochs=100)

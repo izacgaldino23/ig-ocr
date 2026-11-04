@@ -68,7 +68,7 @@ def count_wrong_chars(str1, str2):
 
 
 if __name__ == "__main__":
-    model_name = "0.2"
+    model_name = "0.3"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = CRNN(len(CHAR2IDX) + 1, model_name).to(device)
@@ -144,6 +144,8 @@ if __name__ == "__main__":
                     )
                 total += 1
                 sample_idx += 1
+
+    errors = sorted(errors, key=lambda item: item[3], reverse=True)
 
     errors_file = PROJECT_ROOT / "artifacts" / "evaluate_errors.csv"
     with open(errors_file, "w", encoding="utf-8", newline="") as f:
