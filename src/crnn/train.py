@@ -1,10 +1,11 @@
+import argparse
+from contextlib import nullcontext
 from datetime import datetime
 from functools import partial
-from time import perf_counter
 
 import torch
 from torch import nn, optim
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Sampler, random_split
 
 from src.crnn.model import (
     BLANK_IDX,
@@ -14,7 +15,32 @@ from src.crnn.model import (
     OCRDataset,
     ocr_collate_fn,
 )
-from src.utils.paths import DATA_DIR
+from src.utils.paths import DATA_DIR, PROJECT_ROOT
+
+
+class WidthBucketBatchSampler(Sampler):
+    def __init__(self, dataset, widths, batch_size, bucket_batches=100):
+        self.dataset = dataset
+        self.widths = widths
+        self.batch_size = batch_size
+        self.bucket_size = batch_size * bucket_batches
+
+    def __iter__(self):
+        indices = torch.randperm(len(self.dataset)).tolist()
+        batches = []
+        for start in range(0, len(indices), self.bucket_size):
+            bucket = indices[start : start + self.bucket_size]
+            bucket.sort(key=self.widths.__getitem__, reverse=True)
+            batches.extend(
+                bucket[index : index + self.batch_size]
+                for index in range(0, len(bucket), self.batch_size)
+            )
+
+        for index in torch.randperm(len(batches)).tolist():
+            yield batches[index]
+
+    def __len__(self):
+        return (len(self.dataset) + self.batch_size - 1) // self.batch_size
 
 
 class Train:
@@ -23,7 +49,7 @@ class Train:
         model_name,
         output_name="",
         batch_size=32,
-        workers=2,
+        workers=4,
         learning_rate=1e-5,
     ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -49,11 +75,15 @@ class Train:
             (training_size, validation_size),
             generator=torch.Generator().manual_seed(42),
         )
+        training_widths = [
+            self.dataset.widths[index] for index in training_data.indices
+        ]
         self.dataloader = DataLoader(
             training_data,
-            shuffle=True,
+            batch_sampler=WidthBucketBatchSampler(
+                training_data, training_widths, batch_size
+            ),
             pin_memory=self.device.type == "cuda",
-            batch_size=batch_size,
             num_workers=workers,
             persistent_workers=workers > 0,
             collate_fn=partial(ocr_collate_fn, augment=True),
@@ -114,7 +144,14 @@ class Train:
             loss_sum.item() / total if total else 0.0,
         )
 
-    def execute(self, epochs=10):
+    def execute(self, epochs=10, profile=False):
+        if profile:
+            epochs = 1
+
+        profile_dir = PROJECT_ROOT / "artifacts" / "profiler" / "crnn"
+        if profile:
+            print(f"TensorBoard profiler traces (10 batches per epoch): {profile_dir}")
+
         total_batches = len(self.dataloader)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=epochs, eta_min=1e-6
@@ -126,64 +163,80 @@ class Train:
         for epoch in range(epochs):
             self.model.train()
             epoch_loss = torch.zeros((), device=self.device)
-            epoch_started = perf_counter()
-            for batch_idx, (
-                images,
-                labels,
-                target_lengths,
-                input_lengths,
-                image_widths,
-            ) in enumerate(self.dataloader, 1):
-                cpu_images_pinned = images.is_pinned()
-                images = images.to(self.device, non_blocking=True)
-                labels = labels.to(self.device, non_blocking=True)
-
-                # Forward Pass
-                batch_logits = self.model(images, input_lengths)
-                log_probability = batch_logits.permute(
-                    1, 0, 2
-                )  # CTCLoss requires format (T, B, Num_Classes)
-                log_probability = torch.nn.functional.log_softmax(
-                    log_probability, dim=2
+            profiler = (
+                torch.profiler.profile(
+                    activities=[
+                        torch.profiler.ProfilerActivity.CPU,
+                        *(
+                            [torch.profiler.ProfilerActivity.CUDA]
+                            if self.device.type == "cuda"
+                            else []
+                        ),
+                    ],
+                    schedule=torch.profiler.schedule(
+                        wait=2, warmup=2, active=10, repeat=1
+                    ),
+                    on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                        str(profile_dir)
+                    ),
+                    record_shapes=True,
+                    profile_memory=True,
                 )
+                if profile
+                else nullcontext()
+            )
+            with profiler:
+                for batch_idx, (
+                    images,
+                    labels,
+                    target_lengths,
+                    input_lengths,
+                    image_widths,
+                ) in enumerate(self.dataloader, 1):
+                    images = images.to(self.device, non_blocking=True)
+                    labels = labels.to(self.device, non_blocking=True)
 
-                loss = self.criterion(
-                    log_probability, labels, input_lengths, target_lengths
-                )
-
-                if epoch == 0 and batch_idx == 1:
-                    print(
-                        f"Device Debug | model={next(self.model.parameters()).device} "
-                        f"images={images.device} labels={labels.device} "
-                        f"logits={batch_logits.device} "
-                        f"target_lengths={target_lengths.device} "
-                        f"input_lengths={input_lengths.device} "
-                        f"image_widths={image_widths.device} "
-                        f"cpu_batch_pinned={cpu_images_pinned}"
+                    # Forward Pass
+                    batch_logits = self.model(
+                        images, input_lengths, enforce_sorted=True
                     )
 
-                self.optimizer.zero_grad()
-                loss.backward()
-
-                self.optimizer.step()
-
-                epoch_loss += loss.detach()
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                if batch_idx == 1 or batch_idx % 25 == 0 or batch_idx == total_batches:
-                    elapsed = perf_counter() - epoch_started
-                    print(
-                        f"[{current_time}] Epoch [{epoch + 1}/{epochs}] | "
-                        f"Batch [{batch_idx}/{total_batches}] | "
-                        f"Loss: {loss.item():.4f} | "
-                        f"Elapsed: {elapsed / 60:.1f} min"
+                    log_probability = batch_logits.permute(
+                        1, 0, 2
+                    )  # CTCLoss requires format (T, B, Num_Classes)
+                    log_probability = torch.nn.functional.log_softmax(
+                        log_probability, dim=2
                     )
+
+                    loss = self.criterion(
+                        log_probability, labels, input_lengths, target_lengths
+                    )
+
+                    self.optimizer.zero_grad(set_to_none=True)
+                    loss.backward()
+                    self.optimizer.step()
+
+                    epoch_loss += loss.detach()
+                    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    if (
+                        batch_idx == 1
+                        or batch_idx % 25 == 0
+                        or batch_idx == total_batches
+                    ):
+                        print(
+                            f"[{current_time}] Epoch [{epoch + 1}/{epochs}] | "
+                            f"Batch [{batch_idx}/{total_batches}]"
+                        )
+
+                    if profile and profiler:
+                        profiler.step()
 
             validation_accuracy, validation_loss = self._validate()
             is_best = validation_accuracy > best_accuracy or (
                 validation_accuracy == best_accuracy
                 and validation_loss < best_validation_loss
             )
-            if is_best:
+            if is_best and not profile:
                 best_accuracy = validation_accuracy
                 best_validation_loss = validation_loss
                 best_weights = {
@@ -193,9 +246,7 @@ class Train:
                 self.model.save_model(self.output_name)
 
             scheduler.step()
-            avg_loss = (
-                epoch_loss.item() / total_batches if total_batches > 0 else 0.0
-            )
+            avg_loss = epoch_loss.item() / total_batches if total_batches > 0 else 0.0
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(
                 f"[{current_time}] === End of Epoch {epoch + 1}/{epochs} | "
@@ -203,9 +254,11 @@ class Train:
                 f"Val Accuracy: {validation_accuracy:.2%} | "
                 f"Val Loss: {validation_loss:.4f} | "
                 f"LR: {scheduler.get_last_lr()[0]:.6f}"
-                f"{' | Best checkpoint' if is_best else ''} ==="
+                f"{' | Best checkpoint' if is_best and not profile else ''} ==="
             )
 
+        if profile:
+            return
         if best_weights is None:
             raise RuntimeError("Training completed without a validation checkpoint")
         self.model.load_state_dict(best_weights)
@@ -216,5 +269,13 @@ class Train:
 
 
 if __name__ == "__main__":
-    train = Train("0.3", output_name="0.4", batch_size=32)
-    train.execute(epochs=50)
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Run one epoch and save a TensorBoard profiler trace.",
+    )
+    args = parser.parse_args()
+
+    train = Train("0.4", batch_size=64)
+    train.execute(epochs=1 if args.profile else 25, profile=args.profile)

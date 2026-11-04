@@ -32,6 +32,7 @@ class OCRDataset(Dataset):
 
         self.samples = []
         self.data = []
+        self.widths = []
         self._shard_files = {}
         self._pid = os.getpid()
 
@@ -48,15 +49,30 @@ class OCRDataset(Dataset):
                             member.size,
                         )
 
-            for key, members in samples.items():
-                if "png" not in members or "txt" not in members:
-                    raise ValueError(f"Amostra incompleta '{key}' no shard {shard}")
-                image_offset, image_size = members["png"]
-                label_offset, label_size = members["txt"]
-                self.samples.append(
-                    (shard, image_offset, image_size, label_offset, label_size)
-                )
-                self.data.append(f"{shard.name}/{key}.png")
+            with open(shard, "rb") as shard_file:
+                for key, members in samples.items():
+                    if "png" not in members or "txt" not in members:
+                        raise ValueError(f"Amostra incompleta '{key}' no shard {shard}")
+                    image_offset, image_size = members["png"]
+                    label_offset, label_size = members["txt"]
+                    shard_file.seek(image_offset)
+                    png_header = shard_file.read(24)
+                    if (
+                        len(png_header) != 24
+                        or png_header[:8] != b"\x89PNG\r\n\x1a\n"
+                        or png_header[12:16] != b"IHDR"
+                    ):
+                        raise ValueError(f"Imagem PNG inválida em {shard}:{key}")
+                    width = int.from_bytes(png_header[16:20], "big")
+                    height = int.from_bytes(png_header[20:24], "big")
+                    if width <= 0 or height <= 0:
+                        raise ValueError(f"Dimensões inválidas em {shard}:{key}")
+
+                    self.samples.append(
+                        (shard, image_offset, image_size, label_offset, label_size)
+                    )
+                    self.data.append(f"{shard.name}/{key}.png")
+                    self.widths.append(max(1, int(width * self.img_height / height)))
 
         if not self.samples:
             raise ValueError(f"Base WebDataset sem amostras em {self.dataset_dir}")
@@ -147,7 +163,7 @@ class CRNN(nn.Module):
         # 3. Output Projection
         self.fc = nn.Linear(128 * 2, num_classes)
 
-    def forward(self, x, input_lengths=None):
+    def forward(self, x, input_lengths=None, enforce_sorted=False):
         features = self.cnn(x)
         features = features.squeeze(2)  # (B, 256, W)
         features = features.permute(0, 2, 1)  # (B, W, 256) -> (Batch, Time, Feat)
@@ -160,7 +176,7 @@ class CRNN(nn.Module):
                 features,
                 input_lengths.cpu(),
                 batch_first=True,
-                enforce_sorted=False,
+                enforce_sorted=enforce_sorted,
             )
             packed_out, _ = self.rnn(packed)
             out, _ = pad_packed_sequence(
