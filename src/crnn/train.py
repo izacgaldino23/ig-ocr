@@ -1,5 +1,3 @@
-import argparse
-from contextlib import nullcontext
 from datetime import datetime
 from functools import partial
 
@@ -15,7 +13,7 @@ from src.crnn.model import (
     OCRDataset,
     ocr_collate_fn,
 )
-from src.utils.paths import DATA_DIR, PROJECT_ROOT
+from src.utils.paths import DATA_DIR
 
 
 class WidthBucketBatchSampler(Sampler):
@@ -144,14 +142,7 @@ class Train:
             loss_sum.item() / total if total else 0.0,
         )
 
-    def execute(self, epochs=10, profile=False):
-        if profile:
-            epochs = 1
-
-        profile_dir = PROJECT_ROOT / "artifacts" / "profiler" / "crnn"
-        if profile:
-            print(f"TensorBoard profiler traces (10 batches per epoch): {profile_dir}")
-
+    def execute(self, epochs=10):
         total_batches = len(self.dataloader)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=epochs, eta_min=1e-6
@@ -163,80 +154,47 @@ class Train:
         for epoch in range(epochs):
             self.model.train()
             epoch_loss = torch.zeros((), device=self.device)
-            profiler = (
-                torch.profiler.profile(
-                    activities=[
-                        torch.profiler.ProfilerActivity.CPU,
-                        *(
-                            [torch.profiler.ProfilerActivity.CUDA]
-                            if self.device.type == "cuda"
-                            else []
-                        ),
-                    ],
-                    schedule=torch.profiler.schedule(
-                        wait=2, warmup=2, active=10, repeat=1
-                    ),
-                    on_trace_ready=torch.profiler.tensorboard_trace_handler(
-                        str(profile_dir)
-                    ),
-                    record_shapes=True,
-                    profile_memory=True,
+            for batch_idx, (
+                images,
+                labels,
+                target_lengths,
+                input_lengths,
+                _,
+            ) in enumerate(self.dataloader, 1):
+                images = images.to(self.device, non_blocking=True)
+                labels = labels.to(self.device, non_blocking=True)
+
+                batch_logits = self.model(images, input_lengths, enforce_sorted=True)
+                log_probability = batch_logits.permute(1, 0, 2)
+                log_probability = torch.nn.functional.log_softmax(
+                    log_probability, dim=2
                 )
-                if profile
-                else nullcontext()
-            )
-            with profiler:
-                for batch_idx, (
-                    images,
-                    labels,
-                    target_lengths,
-                    input_lengths,
-                    image_widths,
-                ) in enumerate(self.dataloader, 1):
-                    images = images.to(self.device, non_blocking=True)
-                    labels = labels.to(self.device, non_blocking=True)
+                loss = self.criterion(
+                    log_probability, labels, input_lengths, target_lengths
+                )
 
-                    # Forward Pass
-                    batch_logits = self.model(
-                        images, input_lengths, enforce_sorted=True
-                    )
+                self.optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                self.optimizer.step()
 
-                    log_probability = batch_logits.permute(
-                        1, 0, 2
-                    )  # CTCLoss requires format (T, B, Num_Classes)
-                    log_probability = torch.nn.functional.log_softmax(
-                        log_probability, dim=2
-                    )
-
-                    loss = self.criterion(
-                        log_probability, labels, input_lengths, target_lengths
-                    )
-
-                    self.optimizer.zero_grad(set_to_none=True)
-                    loss.backward()
-                    self.optimizer.step()
-
-                    epoch_loss += loss.detach()
+                epoch_loss += loss.detach()
+                if (
+                    batch_idx == 1
+                    or batch_idx % 25 == 0
+                    or batch_idx == total_batches
+                ):
                     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    if (
-                        batch_idx == 1
-                        or batch_idx % 25 == 0
-                        or batch_idx == total_batches
-                    ):
-                        print(
-                            f"[{current_time}] Epoch [{epoch + 1}/{epochs}] | "
-                            f"Batch [{batch_idx}/{total_batches}]"
-                        )
-
-                    if profile and profiler:
-                        profiler.step()
+                    print(
+                        f"[{current_time}] Epoch [{epoch + 1}/{epochs}] | "
+                        f"Batch [{batch_idx}/{total_batches}]"
+                    )
 
             validation_accuracy, validation_loss = self._validate()
             is_best = validation_accuracy > best_accuracy or (
                 validation_accuracy == best_accuracy
                 and validation_loss < best_validation_loss
             )
-            if is_best and not profile:
+            if is_best:
                 best_accuracy = validation_accuracy
                 best_validation_loss = validation_loss
                 best_weights = {
@@ -254,11 +212,9 @@ class Train:
                 f"Val Accuracy: {validation_accuracy:.2%} | "
                 f"Val Loss: {validation_loss:.4f} | "
                 f"LR: {scheduler.get_last_lr()[0]:.6f}"
-                f"{' | Best checkpoint' if is_best and not profile else ''} ==="
+                f"{' | Best checkpoint' if is_best else ''} ==="
             )
 
-        if profile:
-            return
         if best_weights is None:
             raise RuntimeError("Training completed without a validation checkpoint")
         self.model.load_state_dict(best_weights)
@@ -269,13 +225,5 @@ class Train:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--profile",
-        action="store_true",
-        help="Run one epoch and save a TensorBoard profiler trace.",
-    )
-    args = parser.parse_args()
-
     train = Train("0.4", batch_size=64)
-    train.execute(epochs=1 if args.profile else 25, profile=args.profile)
+    train.execute(epochs=25)
