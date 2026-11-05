@@ -1,4 +1,6 @@
+import csv
 import glob
+import hashlib
 import io
 import os
 import random
@@ -14,6 +16,8 @@ from webdataset.writer import TarWriter
 
 from src.crnn.model import ALPHABET
 from src.utils.paths import DATA_DIR
+
+EXCLUDED_TRAIN_FONTS = ["garait.ttf", "mtcorsva.ttf"]
 
 
 def custom_getsize(self, text):
@@ -217,14 +221,32 @@ class TxtRecognitionGenerator:
         italic=None,
     ):
         output_dir = self.dataset_dir / ("train" if train else "test")
+        split = "train" if train else "test"
+        metadata_dir = self.dataset_dir / "metadata"
+        metadata_dir.mkdir(parents=True, exist_ok=True)
+        usage_path = metadata_dir / f"{split}_font_usage.csv"
+        catalog_path = metadata_dir / f"{split}_fonts.csv"
 
         if clear and output_dir.exists():
             shutil.rmtree(output_dir)
+        if clear:
+            usage_path.unlink(missing_ok=True)
+            catalog_path.unlink(missing_ok=True)
         os.makedirs(output_dir, exist_ok=True)
+
+        fonts = self._fonts_for_style(bold, italic)
+        if train:
+            fonts = [
+                font
+                for font in fonts
+                if os.path.basename(font).lower() not in EXCLUDED_TRAIN_FONTS
+            ]
+            if not fonts:
+                raise RuntimeError("No compatible fonts remain after exclusions")
 
         generator = GeneratorFromStrings(
             strings=content,
-            fonts=self._fonts_for_style(bold, italic),
+            fonts=fonts,
             blur=1 if blur else 0,
             random_blur=blur,
             random_skew=True,
@@ -248,27 +270,54 @@ class TxtRecognitionGenerator:
         shard_path = output_dir / f"shard-{shard_index:06d}.tar"
         temporary_path = output_dir / f".shard-{shard_index:06d}.tar.tmp"
         count = 0
+        font_usage = []
+        font_catalog = {}
 
         with TarWriter(f"file:{temporary_path.resolve().as_posix()}") as sink:
-            for img, label in generator:
+            for generated_index, (img, label) in enumerate(generator):
+                font_path = fonts[generated_index % len(fonts)]
+                font_id = hashlib.sha256(
+                    os.path.normcase(os.path.abspath(font_path)).encode("utf-8")
+                ).hexdigest()[:12]
                 if not isinstance(img, Image):
                     continue
 
+                font_catalog[font_id] = font_path
                 img_gray = img.convert("L")
                 img_buffer = io.BytesIO()
                 img_gray.save(img_buffer, format="PNG", optimize=True)
 
+                sample_key = f"{shard_index:06d}_{count:09d}"
                 sink.write(
                     {
-                        "__key__": f"{shard_index:06d}_{count:09d}",
+                        "__key__": sample_key,
                         "png": img_buffer.getvalue(),
                         "txt": label,
                     }
                 )
+                font_usage.append((sample_key, font_id))
                 count += 1
 
         if count:
             temporary_path.replace(shard_path)
+            catalog_ids = set()
+            if catalog_path.exists():
+                with catalog_path.open(encoding="utf-8", newline="") as catalog_file:
+                    catalog_ids = {
+                        row["font_id"] for row in csv.DictReader(catalog_file)
+                    }
+            with catalog_path.open("a", encoding="utf-8", newline="") as catalog_file:
+                writer = csv.writer(catalog_file)
+                if catalog_file.tell() == 0:
+                    writer.writerow(("font_id", "font_path"))
+                for font_id, font_path in font_catalog.items():
+                    if font_id not in catalog_ids:
+                        writer.writerow((font_id, font_path))
+            with usage_path.open("a", encoding="utf-8", newline="") as usage_file:
+                writer = csv.writer(usage_file)
+                if usage_file.tell() == 0:
+                    writer.writerow(("sample_key", "font_id"))
+                writer.writerows(font_usage)
         else:
             temporary_path.unlink()
 
@@ -307,10 +356,6 @@ if __name__ == "__main__":
         clear = True
         for style_idx, style in enumerate(styles):
             for i, qtd in enumerate(words_by_image):
-                # word_count = words // len(styles) + (style_idx < words % len(styles))
-                # custom_count = custom // len(styles) + (
-                #     style_idx < custom % len(styles)
-                # )
                 trg.generate_images(
                     words_by_image=qtd,
                     count=words,

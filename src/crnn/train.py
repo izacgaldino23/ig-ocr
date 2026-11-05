@@ -97,7 +97,7 @@ class Train:
         )
         torch.cuda.synchronize(self.device)
 
-        self.model.load_if_exists()
+        self.loaded_checkpoint = self.model.load_if_exists()
         self.model.to(self.device)
 
     def _validate(self):
@@ -150,6 +150,21 @@ class Train:
         best_accuracy = -1.0
         best_validation_loss = float("inf")
         best_weights = None
+        checkpoint_updated = False
+
+        baseline_accuracy, baseline_loss = self._validate()
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(
+            f"[{current_time}] Baseline before training | "
+            f"Val Accuracy: {baseline_accuracy:.2%} | Val Loss: {baseline_loss:.4f}"
+        )
+        if self.loaded_checkpoint:
+            best_accuracy = baseline_accuracy
+            best_validation_loss = baseline_loss
+            best_weights = {
+                key: value.detach().cpu().clone()
+                for key, value in self.model.state_dict().items()
+            }
 
         for epoch in range(epochs):
             self.model.train()
@@ -178,11 +193,7 @@ class Train:
                 self.optimizer.step()
 
                 epoch_loss += loss.detach()
-                if (
-                    batch_idx == 1
-                    or batch_idx % 25 == 0
-                    or batch_idx == total_batches
-                ):
+                if batch_idx == 1 or batch_idx % 25 == 0 or batch_idx == total_batches:
                     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     print(
                         f"[{current_time}] Epoch [{epoch + 1}/{epochs}] | "
@@ -202,6 +213,7 @@ class Train:
                     for key, value in self.model.state_dict().items()
                 }
                 self.model.save_model(self.output_name)
+                checkpoint_updated = True
 
             scheduler.step()
             avg_loss = epoch_loss.item() / total_batches if total_batches > 0 else 0.0
@@ -218,12 +230,18 @@ class Train:
         if best_weights is None:
             raise RuntimeError("Training completed without a validation checkpoint")
         self.model.load_state_dict(best_weights)
-        print(
-            f"Best model saved as {self.output_name or self.model_name} "
-            f"with validation accuracy {best_accuracy:.2%}"
-        )
+        if checkpoint_updated:
+            print(
+                f"Best model saved as {self.output_name or self.model_name} "
+                f"with validation accuracy {best_accuracy:.2%}"
+            )
+        else:
+            print(
+                f"Pretrained model {self.model_name} retained with validation "
+                f"accuracy {best_accuracy:.2%}"
+            )
 
 
 if __name__ == "__main__":
     train = Train("0.4", batch_size=64)
-    train.execute(epochs=25)
+    train.execute(epochs=100)
