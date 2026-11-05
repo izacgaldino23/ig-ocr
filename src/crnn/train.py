@@ -243,5 +243,5 @@ class Train:
 
 
 if __name__ == "__main__":
-    train = Train("0.4", batch_size=64)
-    train.execute(epochs=100)
+    train = Train("0.4", "0.4.1-ft", batch_size=64)
+    train.execute(epochs=25)

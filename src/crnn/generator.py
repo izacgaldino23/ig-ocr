@@ -17,7 +17,14 @@ from webdataset.writer import TarWriter
 from src.crnn.model import ALPHABET
 from src.utils.paths import DATA_DIR
 
-EXCLUDED_TRAIN_FONTS = ["garait.ttf", "mtcorsva.ttf"]
+FONT_STYLES = (
+    (False, False),
+    (False, True),
+    (True, False),
+    (True, True),
+)
+REQUIRED_FONT_STYLES = frozenset(FONT_STYLES)
+EXCLUDED_FONT_FAMILIES = {"garamond", "monotype corsiva"}
 
 
 def custom_getsize(self, text):
@@ -62,10 +69,9 @@ class TxtRecognitionGenerator:
         ]
         required_codepoints = {ord(char) for char in ALPHABET}
 
-        valid_fonts = []
-        valid_fonts_by_style = {
-            (bold, italic): [] for bold in (False, True) for italic in (False, True)
-        }
+        font_records = []
+        styles_by_family = {}
+        family_names = {}
         for font_path in all_fonts:
             basename = os.path.basename(font_path).lower()
             if any(exc in basename for exc in excluded_keywords):
@@ -78,27 +84,59 @@ class TxtRecognitionGenerator:
                     cmap = tt_font.getBestCmap() or {}
                     os2 = tt_font.get("OS/2")
                     head = tt_font.get("head")
-                if required_codepoints.issubset(cmap):
-                    valid_fonts.append(font_path)
-                    style = (
-                        bool(
-                            (os2 and os2.fsSelection & (1 << 5))  # type: ignore
-                            or (head and head.macStyle & 1)  # type: ignore
-                        ),
-                        bool(
-                            (os2 and os2.fsSelection & 1)  # type: ignore
-                            or (head and head.macStyle & 2)  # type: ignore
-                        ),
-                    )
-                    valid_fonts_by_style[style].append(font_path)
+                    name_table = tt_font["name"]
+                    family_name = name_table.getDebugName(
+                        16
+                    ) or name_table.getDebugName(1)
+                if not family_name or not required_codepoints.issubset(cmap):
+                    continue
+
+                family_key = family_name.strip().casefold()
+                style = (
+                    bool(
+                        (os2 and os2.fsSelection & (1 << 5))  # type: ignore
+                        or (head and head.macStyle & 1)  # type: ignore
+                    ),
+                    bool(
+                        (os2 and os2.fsSelection & 1)  # type: ignore
+                        or (head and head.macStyle & 2)  # type: ignore
+                    ),
+                )
+                font_records.append((font_path, family_key, style))
+                styles_by_family.setdefault(family_key, set()).add(style)
+                family_names[family_key] = family_name.strip()
             except (OSError, TTLibError, KeyError, ValueError) as exc:
                 print(f"font {font_path} invalid: {exc}")
 
-        if not valid_fonts:
-            raise RuntimeError("No system fonts support the complete OCR alphabet")
+        allowed_families = {
+            family
+            for family, styles in styles_by_family.items()
+            if REQUIRED_FONT_STYLES.issubset(styles)
+            and family not in EXCLUDED_FONT_FAMILIES
+        }
+        if not allowed_families:
+            raise RuntimeError("No complete font families support the OCR alphabet")
 
-        self.available_fonts = valid_fonts
-        self.available_fonts_by_style = valid_fonts_by_style
+        self.available_fonts_by_style = {
+            style: [
+                font_path
+                for font_path, family, font_style in font_records
+                if family in allowed_families and font_style == style
+            ]
+            for style in FONT_STYLES
+        }
+        self.available_fonts = [
+            font_path
+            for fonts in self.available_fonts_by_style.values()
+            for font_path in fonts
+        ]
+        self.available_font_families = sorted(
+            family_names[family] for family in allowed_families
+        )
+        print(
+            f"Using {len(self.available_font_families)} complete font families: "
+            f"{', '.join(self.available_font_families)}"
+        )
 
     def _fonts_for_style(self, bold=None, italic=None):
         fonts = [
@@ -134,14 +172,14 @@ class TxtRecognitionGenerator:
         italic=None,
     ):
         masks = [
-            "R$ #,##",
             "R$ ##,##",
             "R$ ###,##",
             "##/##/2026",
+            "##-##-2026",
             "(##) 9####-####",
-            "(##)9####-####",
             "(##) ####-####",
             "###.###.###-##",
+            "##.###.###/####-##",
         ]
 
         content = []
@@ -235,15 +273,6 @@ class TxtRecognitionGenerator:
         os.makedirs(output_dir, exist_ok=True)
 
         fonts = self._fonts_for_style(bold, italic)
-        if train:
-            fonts = [
-                font
-                for font in fonts
-                if os.path.basename(font).lower() not in EXCLUDED_TRAIN_FONTS
-            ]
-            if not fonts:
-                raise RuntimeError("No compatible fonts remain after exclusions")
-
         generator = GeneratorFromStrings(
             strings=content,
             fonts=fonts,
@@ -350,7 +379,7 @@ if __name__ == "__main__":
     words_count = 300
     custom_count = 75
 
-    for train in [True, False]:
+    for train in [False]:
         words = words_count if train else int(words_count / 3)
         custom = custom_count if train else int(custom_count / 3)  # x * 8
         clear = True

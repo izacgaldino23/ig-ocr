@@ -68,7 +68,7 @@ def count_wrong_chars(str1, str2):
 
 
 if __name__ == "__main__":
-    model_name = "0.4"
+    model_name = "0.4.1-ft"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = CRNN(len(CHAR2IDX) + 1, model_name).to(device)
