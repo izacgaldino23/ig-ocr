@@ -1,3 +1,4 @@
+import argparse
 from datetime import datetime
 from functools import partial
 
@@ -49,6 +50,7 @@ class Train:
         batch_size=32,
         workers=4,
         learning_rate=1e-5,
+        persist=False,
     ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = CRNN(len(CHAR2IDX) + 1, model_name)
@@ -58,6 +60,7 @@ class Train:
         )
         self.model_name = model_name
         self.output_name = output_name
+        self.persist = persist
 
         dataset_dir = DATA_DIR / "words-dataset"
         self.dataset = OCRDataset(dataset_dir, train=True)
@@ -158,7 +161,7 @@ class Train:
             f"[{current_time}] Baseline before training | "
             f"Val Accuracy: {baseline_accuracy:.2%} | Val Loss: {baseline_loss:.4f}"
         )
-        if self.loaded_checkpoint:
+        if self.loaded_checkpoint and not self.persist:
             best_accuracy = baseline_accuracy
             best_validation_loss = baseline_loss
             best_weights = {
@@ -237,11 +240,18 @@ class Train:
             )
         else:
             print(
-                f"Pretrained model {self.model_name} retained with validation "
+                f"Pre-trained model {self.model_name} retained with validation "
                 f"accuracy {best_accuracy:.2%}"
             )
 
 
 if __name__ == "__main__":
-    train = Train("0.4", "0.4.1-ft", batch_size=64)
+    parser = argparse.ArgumentParser(description="Neural network training")
+    parser.add_argument(
+        "--persist",
+        help="Save model without considering loaded model accuracy",
+        action="store_true",
+    )
+    args = parser.parse_args()
+    train = Train("0.4.2-ft", "0.4.3-ft", batch_size=64, persist=args.persist)
     train.execute(epochs=25)

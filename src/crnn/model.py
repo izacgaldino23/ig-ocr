@@ -145,6 +145,7 @@ class CRNN(nn.Module):
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
+            # nn.Dropout2d(0.15),
             nn.MaxPool2d(2, 2),  # (B, 128, 8, 64)
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
@@ -190,9 +191,30 @@ class CRNN(nn.Module):
         file = checkpoint_path(self.name, "ocr")
         if file.exists():
             content = torch.load(file, weights_only=True)
+            state_dict = content["model"]
 
-            self.load_state_dict(content["model"])
-            print(f"Model {self.name} was loaded")
+            # Tenta carregar normalmente primeiro
+            try:
+                self.load_state_dict(state_dict, strict=True)
+                print(f"Model {self.name} loaded successfully.")
+            except RuntimeError:
+                print(
+                    "Checkpoint antigo detectado, ajustando chaves para nova arquitetura..."
+                )
+                # Se falhar, aplica a lógica de correção apenas agora
+                new_state_dict = {}
+                for k, v in state_dict.items():
+                    if k.startswith("cnn."):
+                        idx = int(k.split(".")[1])
+                        if idx >= 7:  # Camadas após o dropout inserido na posição 7
+                            new_k = k.replace(f"cnn.{idx}.", f"cnn.{idx + 1}.")
+                            new_state_dict[new_k] = v
+                        else:
+                            new_state_dict[k] = v
+                    else:
+                        new_state_dict[k] = v
+                self.load_state_dict(new_state_dict, strict=True)
+
             return True
 
         print(f"Model {self.name} doesn't exist")
