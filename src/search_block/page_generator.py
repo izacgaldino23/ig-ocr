@@ -4,18 +4,23 @@ from pathlib import Path
 
 from faker import Faker
 from PIL import Image, ImageDraw, ImageFont
+from PIL.ImageDraw import ImageDraw as ID
+from PIL.ImageFont import ImageFont as IF
 
 from src.search_block.analyzer import Box
 from src.utils.paths import DATA_DIR, test_image_path
 
 
 class ContentLine:
-    def __init__(self, text: str=""):
+    def __init__(self, text: str = ""):
         self.text = text
         self.bbox: Box
 
     def set_bbox(self, x, y, w, h):
         self.bbox = Box(x, y, w, h)
+
+    def __str__(self) -> str:
+        return f"Text: [{self.text}]\nBox: [{self.bbox}]"
 
 
 class PageGenerator:
@@ -62,6 +67,7 @@ class PageGenerator:
 
         x, y = self.mm_to_px(margins[0]), self.mm_to_px(margins[1])
         x2, y2 = width - self.mm_to_px(margins[2]), height - self.mm_to_px(margins[3])
+        max_width = x2 - x
 
         image = Image.new("L", (width, height), color=255)
         draw = ImageDraw.Draw(image)
@@ -71,36 +77,65 @@ class PageGenerator:
         font_path = fonts[0]
         font = ImageFont.truetype(font_path, size=font_size)
 
-        space = int(font_size * 0.8)
+        # space = int(font_size * 0.8)
         spacing = int(font_size * 0.1)
         line_height = int(font_size * 1.2)
 
         curr_x, curr_y = x, y
+        lines = []
         for sentence in paragraphs:
             words = sentence.split(" ")
 
-            for word in words:
+            line_text = []
+            for idx in range(len(words)):
+                line_text.append(words[idx])
+                phrase = " ".join(line_text)
                 left, top, right, bottom = draw.textbbox(
-                    (curr_x, curr_y), word, font=font, spacing=spacing
+                    (curr_x, curr_y),
+                    phrase,
+                    font=font,
+                    spacing=spacing,
                 )
 
-                if right > x2:
-                    curr_x = x
-                    curr_y += line_height + spacing
+                greater = right >= x2
+                is_last_word = idx == len(words) - 1
+
+                if greater or is_last_word:
+                    if greater and not is_last_word:
+                        line_text = line_text[:-1]
+
+                    phrase = " ".join(line_text)
+
+                    if not is_last_word:
+                        line_text = [words[idx]]
 
                     left, top, right, bottom = draw.textbbox(
-                        (curr_x, curr_y), word, font=font, spacing=spacing
+                        (curr_x, curr_y),
+                        phrase,
+                        font=font,
+                        spacing=spacing,
                     )
-                    
-                word_w = right - left
 
-                if bottom > y2:
-                    break
+                    phrase_w = right - left
+                    phrase_h = bottom - top
 
-                draw.text((curr_x, curr_y), word, fill=0, font=font, spacing=spacing)
-                curr_x += word_w + space
+                    # enough text to add the line
+                    line = ContentLine(phrase)
+                    line.set_bbox(curr_x, curr_y, phrase_w, phrase_h)
+                    lines.append(line)
 
-            curr_x, curr_y = x, curr_y + font_size * 2 + spacing
+                    draw.text(
+                        (curr_x, curr_y), phrase, fill=0, font=font, spacing=spacing
+                    )
+
+                    curr_x = x
+                    curr_y += line_height + spacing
+                    line_text = []
+
+                    if curr_y > y2:
+                        break
+
+            curr_y += line_height + spacing
             if curr_y > y2:
                 break
 
@@ -110,7 +145,7 @@ class PageGenerator:
 
         image.save(image_file)
 
-        return file_name
+        return file_name, lines
 
     @staticmethod
     def mm_to_px(mm: float, dpi: int = 150) -> int:
@@ -131,4 +166,6 @@ if __name__ == "__main__":
         for _ in range(6):
             paragraphs.append(generator.generate_sentence())
 
-        generator.generate(paragraphs)
+        img_name, lines = generator.generate(paragraphs)
+        print(img_name)
+        # print(lines)
