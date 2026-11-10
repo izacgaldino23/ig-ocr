@@ -48,6 +48,17 @@ class Box:
         self.y = y
         self.h = end_y - y
 
+    def __str__(self) -> str:
+        return f"X: [{self.x}] | Y: [{self.y}] | W: [{self.w}] | H: [{self.h}]"
+
+    def to_dict(self) -> dict:
+        return {
+            "x": self.x,
+            "y": self.y,
+            "w": self.w,
+            "h": self.h,
+        }
+
 
 class Line:
     def __init__(self, boxes: list[Box] | None) -> None:
@@ -185,7 +196,7 @@ def boxes_to_line(lines: list[Line]) -> list[Line]:
 
 
 if __name__ == "__main__":
-    image_name = "2360"
+    image_name = "3216"
     img, lines = character_segmentation(image_name, True)
     # print(lines)
     # cv2.imwrite(f"{test_image_path(image_name)}-dilatted.png", img)

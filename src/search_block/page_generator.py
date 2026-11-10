@@ -1,4 +1,5 @@
 import csv
+import json
 import random
 from pathlib import Path
 
@@ -19,8 +20,8 @@ class ContentLine:
     def set_bbox(self, x, y, w, h):
         self.bbox = Box(x, y, w, h)
 
-    def __str__(self) -> str:
-        return f"Text: [{self.text}]\nBox: [{self.bbox}]"
+    def to_dict(self):
+        return {"text": self.text, "bbox": self.bbox.to_dict()}
 
 
 class PageGenerator:
@@ -82,7 +83,7 @@ class PageGenerator:
         line_height = int(font_size * 1.2)
 
         curr_x, curr_y = x, y
-        lines = []
+        lines: list[ContentLine] = []
         for sentence in paragraphs:
             words = sentence.split(" ")
 
@@ -139,13 +140,19 @@ class PageGenerator:
             if curr_y > y2:
                 break
 
-        file_name = f"{random.randint(1000, 9999)}"
-        image_file = test_image_path(f"{file_name}.png")
-        image_file.parent.mkdir(parents=True, exist_ok=True, mode=777)
+        file_name = f"{random.randint(1000, 99999)}"
+        image_path = test_image_path(f"{file_name}.png")
+        image_path.parent.mkdir(parents=True, exist_ok=True, mode=777)
 
-        image.save(image_file)
+        json_file = test_image_path(f"{file_name}.json")
+        clues = [line.to_dict() for line in lines]
 
-        return file_name, lines
+        with open(json_file, "w", encoding="utf-8") as f:
+            json.dump({"clues": clues}, f, indent=4)
+
+        image.save(image_path)
+
+        return image_path, clues
 
     @staticmethod
     def mm_to_px(mm: float, dpi: int = 150) -> int:
@@ -168,4 +175,3 @@ if __name__ == "__main__":
 
         img_name, lines = generator.generate(paragraphs)
         print(img_name)
-        # print(lines)
