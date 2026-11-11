@@ -117,7 +117,7 @@ class OCRDataset(Dataset):
         if h <= 0 or w <= 0:
             raise ValueError(f"Invalid image dimensions ({h}x{w}) for {idx}")
 
-        new_w = max(1, int(w * (self.img_height / h)))
+        new_w = max(1, int(w * self.img_height / h))
         img = cv2.resize(img, (int(new_w), int(self.img_height)))
 
         img_tensor = torch.from_numpy(img).unsqueeze(0).float().div_(255)

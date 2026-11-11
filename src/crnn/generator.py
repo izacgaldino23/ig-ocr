@@ -248,12 +248,15 @@ class TxtRecognitionGenerator:
             italic=italic,
         )
 
-    def generate_page_lines(self, pages=1, train=True, clear=False):
+    def generate_page_lines(self, pages=1, train=True, clear=False, text="floresta"):
         page_generator = PageGenerator(fonts=self.available_fonts)
         samples = []
 
         for _ in range(pages):
-            paragraphs = [page_generator.generate_sentence() for _ in range(6)]
+            if text == "floresta":
+                paragraphs = [page_generator.floresta_sentence() for _ in range(6)]
+            else:
+                paragraphs = [page_generator.generate_sentence() for _ in range(6)]
             image, lines, font_path = page_generator.render(paragraphs)
 
             for line in lines:
@@ -405,7 +408,7 @@ if __name__ == "__main__":
     custom_count = 75
     page_count = 90
 
-    for train in [True, False]:
+    for train in [False, True]:
         words = words_count if train else int(words_count / 3)
         custom = custom_count if train else int(custom_count / 3)  # x * 8
         pages = page_count if train else int(page_count / 3)

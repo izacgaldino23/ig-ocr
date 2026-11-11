@@ -144,7 +144,7 @@ def character_segmentation(image_name: str, inverted=False):
     return img, sorted_boxes_by_line
 
 
-def sort_boxes_by_line(boxes: list[Box], tolerance=25) -> list[Line]:
+def sort_boxes_by_line(boxes: list[Box], gap=2) -> list[Line]:
     if not boxes:
         return []
 
@@ -153,17 +153,18 @@ def sort_boxes_by_line(boxes: list[Box], tolerance=25) -> list[Line]:
     lines: list[Line] = []
     curr_line = Line([boxes[0]])
 
-    avg_y: int = curr_line.get_box_by_index(0).y
     for b in boxes[1:]:
-        if abs(b.y - avg_y) < tolerance:  # check if both are in the same line
+        top = curr_line.bbox.y
+        bottom = curr_line.bbox.y + curr_line.bbox.h
+        # same line when the vertical spans overlap; the gap covers accents
+        # and dots sitting just above or below the line box
+        if b.y < bottom + gap and b.y + b.h > top - gap:
             curr_line.add_box(b)
-            avg_y = int((avg_y + b.y) / 2)
         else:
             # add the line to lines_list, sorting them by x
             curr_line.sort_boxes()
             lines.append(curr_line)
             curr_line = Line([b])
-            avg_y = b.y
 
     if curr_line:
         curr_line.sort_boxes()

@@ -1,8 +1,10 @@
 import csv
 import json
 import random
+import re
 from pathlib import Path
 
+import nltk
 from faker import Faker
 from PIL import Image, ImageDraw, ImageFont
 from PIL.ImageDraw import ImageDraw as ID
@@ -28,6 +30,8 @@ class PageGenerator:
     def __init__(self, fonts: list | None = None):
         # defaults to the catalog written by the CRNN generator
         self.fonts = fonts if fonts is not None else self.get_fonts()
+        self._floresta_pool: list[str] | None = None
+        self._floresta_index = 0
 
     def generate_sentence(self) -> str:
         fake = Faker("pt_BR")
@@ -35,6 +39,40 @@ class PageGenerator:
         text = fake.sentence(nb_words=random.randint(12, 40))
 
         return self.inject_accents(text)
+
+    def floresta_sentence(self) -> str:
+        # real Portuguese: natural accents, case and punctuation
+        if self._floresta_pool is None:
+            nltk.data.path.append(str(DATA_DIR / "floresta"))
+            from nltk.corpus import floresta
+
+            pool = []
+            sentences = floresta.sents()
+            for sentence in sentences:
+                # treebank artifacts: '_' joins multiword tokens,
+                # «» are quote marks and {} are bracket marks
+                cleaned = (
+                    " ".join(str(word) for word in sentence)
+                    .replace("_", " ")
+                    .replace("«", "")
+                    .replace("»", "")
+                    .replace("{", "")
+                    .replace("}", "")
+                )
+                cleaned = " ".join(cleaned.split())
+                # treebank tokens carry a space before punctuation ("palavra ,")
+                cleaned = re.sub(r"\s+([.,!?;:])", r"\1", cleaned)
+                if cleaned:
+                    pool.append(cleaned)
+            random.shuffle(pool)
+            self._floresta_pool = pool
+
+        sentence = self._floresta_pool[self._floresta_index]
+        self._floresta_index += 1
+        if self._floresta_index >= len(self._floresta_pool):
+            random.shuffle(self._floresta_pool)
+            self._floresta_index = 0
+        return sentence
 
     def inject_accents(self, text):
         substitutions = {
@@ -176,9 +214,12 @@ if __name__ == "__main__":
     pages_count = 3
     generator = PageGenerator()
     for _ in range(pages_count):
-        paragraphs = []
-        for _ in range(6):
-            paragraphs.append(generator.generate_sentence())
+        # the floresta corpus is downloaded by src.crnn.generator;
+        # fall back to faker lorem when it is not available yet
+        try:
+            paragraphs = [generator.floresta_sentence() for _ in range(6)]
+        except LookupError:
+            paragraphs = [generator.generate_sentence() for _ in range(6)]
 
         img_name, lines = generator.generate(paragraphs)
         print(img_name)

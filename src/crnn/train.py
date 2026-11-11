@@ -253,5 +253,5 @@ if __name__ == "__main__":
         action="store_true",
     )
     args = parser.parse_args()
-    train = Train("0.4.2-ft", "0.4.3-ft", batch_size=64, persist=args.persist)
+    train = Train("0.4.3-ft", "0.4.4-ft", batch_size=64, persist=args.persist)
     train.execute(epochs=25)

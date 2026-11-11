@@ -144,7 +144,7 @@ def evaluate(model_name, device, dataset, test_loader):
     )
     
 if __name__ == "__main__":
-    models = ["0.4.2-ft", "0.4.3-ft"]
+    models = ["0.4.4-ft"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset_dir = DATA_DIR / "words-dataset"
