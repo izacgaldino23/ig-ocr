@@ -14,7 +14,8 @@ from PIL.Image import Image
 from trdg.generators import GeneratorFromStrings
 from webdataset.writer import TarWriter
 
-from src.crnn.model import ALPHABET
+from src.crnn.model import ALPHABET, CHAR2IDX
+from src.search_block.page_generator import PageGenerator
 from src.utils.paths import DATA_DIR
 
 FONT_STYLES = (
@@ -247,6 +248,24 @@ class TxtRecognitionGenerator:
             italic=italic,
         )
 
+    def generate_page_lines(self, pages=1, train=True, clear=False):
+        page_generator = PageGenerator(fonts=self.available_fonts)
+        samples = []
+
+        for _ in range(pages):
+            paragraphs = [page_generator.generate_sentence() for _ in range(6)]
+            image, lines, font_path = page_generator.render(paragraphs)
+
+            for line in lines:
+                # keep labels aligned with the model alphabet (OCRDataset
+                # silently drops chars outside it, corrupting the target)
+                if any(char not in CHAR2IDX for char in line.text):
+                    continue
+                x, y, w, h = line.bbox.get_values()
+                samples.append((image.crop((x, y, x + w, y + h)), line.text, font_path))
+
+        self._write_shard(samples, train, clear)
+
     def persist_images(
         self,
         content,
@@ -258,20 +277,6 @@ class TxtRecognitionGenerator:
         bold=None,
         italic=None,
     ):
-        output_dir = self.dataset_dir / ("train" if train else "test")
-        split = "train" if train else "test"
-        metadata_dir = self.dataset_dir / "metadata"
-        metadata_dir.mkdir(parents=True, exist_ok=True)
-        usage_path = metadata_dir / f"{split}_font_usage.csv"
-        catalog_path = metadata_dir / f"{split}_fonts.csv"
-
-        if clear and output_dir.exists():
-            shutil.rmtree(output_dir)
-        if clear:
-            usage_path.unlink(missing_ok=True)
-            catalog_path.unlink(missing_ok=True)
-        os.makedirs(output_dir, exist_ok=True)
-
         fonts = self._fonts_for_style(bold, italic)
         generator = GeneratorFromStrings(
             strings=content,
@@ -285,6 +290,29 @@ class TxtRecognitionGenerator:
             rtl=True,
             character_spacing=letter_spacing,
         )
+
+        samples = (
+            (img, label, fonts[generated_index % len(fonts)])
+            for generated_index, (img, label) in enumerate(generator)
+            if isinstance(img, Image)
+        )
+
+        self._write_shard(samples, train, clear)
+
+    def _write_shard(self, samples, train, clear=False):
+        output_dir = self.dataset_dir / ("train" if train else "test")
+        split = "train" if train else "test"
+        metadata_dir = self.dataset_dir / "metadata"
+        metadata_dir.mkdir(parents=True, exist_ok=True)
+        usage_path = metadata_dir / f"{split}_font_usage.csv"
+        catalog_path = metadata_dir / f"{split}_fonts.csv"
+
+        if clear and output_dir.exists():
+            shutil.rmtree(output_dir)
+        if clear:
+            usage_path.unlink(missing_ok=True)
+            catalog_path.unlink(missing_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
 
         shard_index = (
             max(
@@ -303,13 +331,10 @@ class TxtRecognitionGenerator:
         font_catalog = {}
 
         with TarWriter(f"file:{temporary_path.resolve().as_posix()}") as sink:
-            for generated_index, (img, label) in enumerate(generator):
-                font_path = fonts[generated_index % len(fonts)]
+            for img, label, font_path in samples:
                 font_id = hashlib.sha256(
                     os.path.normcase(os.path.abspath(font_path)).encode("utf-8")
                 ).hexdigest()[:12]
-                if not isinstance(img, Image):
-                    continue
 
                 font_catalog[font_id] = font_path
                 img_gray = img.convert("L")
@@ -378,10 +403,12 @@ if __name__ == "__main__":
 
     words_count = 300
     custom_count = 75
+    page_count = 30
 
-    for train in [False]:
+    for train in [True, False]:
         words = words_count if train else int(words_count / 3)
         custom = custom_count if train else int(custom_count / 3)  # x * 8
+        pages = page_count if train else int(page_count / 3)
         clear = True
         for style_idx, style in enumerate(styles):
             for i, qtd in enumerate(words_by_image):
@@ -402,3 +429,5 @@ if __name__ == "__main__":
                 text_size=text_size,
                 **style,
             )
+
+        trg.generate_page_lines(pages=pages, train=train)

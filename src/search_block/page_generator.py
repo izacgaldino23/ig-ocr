@@ -25,6 +25,10 @@ class ContentLine:
 
 
 class PageGenerator:
+    def __init__(self, fonts: list | None = None):
+        # defaults to the catalog written by the CRNN generator
+        self.fonts = fonts if fonts is not None else self.get_fonts()
+
     def generate_sentence(self) -> str:
         fake = Faker("pt_BR")
 
@@ -62,20 +66,18 @@ class PageGenerator:
 
         return fonts
 
-    def generate(self, paragraphs: list[str], margins=(10, 10, 10, 10)):
+    def render(self, paragraphs: list[str], margins=(10, 10, 10, 10), font_path=None):
         width, height = self.mm_to_px(210), self.mm_to_px(297)  # 210 x 297mm
-        fonts = self.get_fonts()
+        if font_path is None:
+            font_path = random.choice(self.fonts)
 
         x, y = self.mm_to_px(margins[0]), self.mm_to_px(margins[1])
         x2, y2 = width - self.mm_to_px(margins[2]), height - self.mm_to_px(margins[3])
-        max_width = x2 - x
 
         image = Image.new("L", (width, height), color=255)
         draw = ImageDraw.Draw(image)
 
         font_size = self.pt_to_px(random.randint(12, 25))
-        random.shuffle(fonts)
-        font_path = fonts[0]
         font = ImageFont.truetype(font_path, size=font_size)
 
         # space = int(font_size * 0.8)
@@ -117,12 +119,10 @@ class PageGenerator:
                         spacing=spacing,
                     )
 
-                    phrase_w = right - left
-                    phrase_h = bottom - top
-
-                    # enough text to add the line
+                    # ink box returned by textbbox, not the draw anchor,
+                    # so crops never clip ascenders/descenders
                     line = ContentLine(phrase)
-                    line.set_bbox(curr_x, curr_y, phrase_w, phrase_h)
+                    line.set_bbox(left, top, right - left, bottom - top)
                     lines.append(line)
 
                     draw.text(
@@ -139,6 +139,13 @@ class PageGenerator:
             curr_y += line_height + spacing
             if curr_y > y2:
                 break
+
+        return image, lines, font_path
+
+    def generate(
+        self, paragraphs: list[str], margins=(10, 10, 10, 10), font_path=None
+    ):
+        image, lines, _ = self.render(paragraphs, margins, font_path)
 
         file_name = f"{random.randint(1000, 99999)}"
         image_path = test_image_path(f"{file_name}.png")
