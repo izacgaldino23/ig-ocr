@@ -403,7 +403,7 @@ if __name__ == "__main__":
 
     words_count = 300
     custom_count = 75
-    page_count = 30
+    page_count = 90
 
     for train in [True, False]:
         words = words_count if train else int(words_count / 3)
