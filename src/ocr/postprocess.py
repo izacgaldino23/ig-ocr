@@ -40,7 +40,7 @@ CONTRACTIONS = frozenset(
 
 class LexiconCorrector:
     def __init__(self) -> None:
-        # corpus lives where src/crnn/generator.py downloads it
+        # corpus lives where src/datagen/generator.py downloads it
         nltk.data.path.append(str(DATA_DIR / "floresta"))
         from nltk.corpus import floresta
 

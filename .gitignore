@@ -2,10 +2,8 @@
 data/
 __pycache__/
 *.pth
-test_gpu.py
-.codebook.toml
-log/profiler/
-log/runs/
-.zed/
 *.csv
+.codebook.toml
+.zed/
 .cortexkit/
+.ruff_cache/

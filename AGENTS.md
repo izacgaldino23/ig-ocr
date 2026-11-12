@@ -12,24 +12,23 @@
 
 ## Project layout
 
-- `src\neural_network\` contains EMNIST ByClass training, evaluation, visualization,
-  and the desktop recognizer.
-- `src\ocr\` contains character ROI preprocessing and the OCR demo pipeline.
-- `src\search_block\` generates labeled sample images and detects/validates
-  character bounding boxes.
-- `src\utils\paths.py` defines paths for data, checkpoints, test images, and debug
-  output.
-- Model checkpoints are stored in `artifacts\checkpoints\`; datasets and generated
-  images are stored under `data\`.
+- `src\ocr\` is the runtime: `model.py` (CRNN, alphabet, shard dataset),
+  `analyzer.py` (page to lines), `recognize.py` (page to text), `postprocess.py`
+  (lexicon accent/case corrector).
+- `src\training\` holds `train.py`, `evaluate.py`, and `compare_font_errors.py`.
+- `src\datagen\` generates the synthetic dataset: `generator.py` writes the word
+  and page-line shards, `page_generator.py` renders full pages with a JSON clue
+  file.
+- `src\utils\paths.py` defines paths for data, checkpoints, and test images.
+- Model checkpoints live in `artifacts\checkpoints\ocr\`; datasets and generated
+  images live under `data\`.
 
 ## Data safety
 
-- `.venv\Scripts\python.exe -m src.search_block.validation` deletes files in
-  `data\test_images\` before generating its sample images. Only run it when that
-  directory contains disposable files.
-- `.venv\Scripts\python.exe -m src.ocr.process` clears files in
-  `data\debug_errors\` and expects its sample image to be available. Check those
-  paths before running it.
+- `data\test_images\` holds the 15 synthetic pages with their JSON clues. They are
+  the regression set: never delete or regenerate over them.
+- `src\datagen\generator.py` writes and overwrites shards under
+  `data\raw\words-dataset\`. Regenerating the dataset discards the current one.
 - Preserve existing user changes and data. Do not clean generated or data
   directories unless the task explicitly requires it.
 
@@ -38,7 +37,14 @@
 Run modules from the repository root and use the project interpreter, for example:
 
 ```powershell
-.venv\Scripts\python.exe -m src.neural_network.evaluate
+.venv\Scripts\python.exe -m src.ocr.recognize 11263 0.4.8-ft
+.venv\Scripts\python.exe -m src.training.evaluate --input 0.4.8-ft
+```
+
+Run the tests with:
+
+```powershell
+.venv\Scripts\python.exe -m unittest discover -s tests
 ```
 
 Install dependencies only into the project environment:

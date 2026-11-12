@@ -14,8 +14,8 @@ from PIL.Image import Image
 from trdg.generators import GeneratorFromStrings
 from webdataset.writer import TarWriter
 
-from src.crnn.model import ALPHABET, CHAR2IDX
-from src.search_block.page_generator import PageGenerator
+from src.datagen.page_generator import PageGenerator
+from src.ocr.model import ALPHABET, CHAR2IDX
 from src.utils.paths import DATA_DIR
 
 FONT_STYLES = (

@@ -9,7 +9,7 @@ import numpy as np
 from faker import Faker
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from src.search_block.analyzer import Box
+from src.ocr.analyzer import Box
 from src.utils.paths import DATA_DIR, test_image_path
 
 
@@ -254,7 +254,7 @@ if __name__ == "__main__":
     pages_count = 3
     generator = PageGenerator()
     for _ in range(pages_count):
-        # the floresta corpus is downloaded by src.crnn.generator;
+        # the floresta corpus is downloaded by src.datagen.generator;
         # fall back to faker lorem when it is not available yet
         try:
             paragraphs = [generator.floresta_sentence() for _ in range(6)]

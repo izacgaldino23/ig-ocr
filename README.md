@@ -1,119 +1,106 @@
-# NUMBER OCR
+# ig-ocr
 
-Character recognition project using the EMNIST ByClass dataset
-(digits, uppercase letters, and lowercase letters).
+OCR de linha para documentos em português. Um CRNN com CTC lê a página inteira,
+linha por linha, e o texto passa por um corretor léxico opcional (acento e caixa)
+construído sobre o corpus [floresta](https://www.linguateca.pt/floresta/).
 
-## Project Structure
+Checkpoint atual: `0.4.8-ft` — 96,06% de exact match em 4.919 linhas sintéticas
+de teste e 98,6–99,9% de acurácia de caractere nas páginas de regressão.
 
-- `src/neural_network/`: EMNIST training, evaluation, visualization, and desktop
-  character recognition.
-- `src/ocr/`: character-image preprocessing and the OCR demo pipeline.
-- `src/search_block/`: synthetic labeled-image generation and character
-  segmentation/validation.
-- `src/utils/`: shared paths and project utilities.
-- `data/raw/`: EMNIST dataset; torchvision stores its files in
-  `data/raw/EMNIST/raw/`.
-- `data/test_images/`: generated or sample images and their label files.
-- `data/debug_errors/`: debug images produced by the OCR demo.
-- `artifacts/checkpoints/`: trained model weights.
+## Estrutura
 
-## Run
-
-Run commands from the repository root using the project virtual environment:
-
-```powershell
-.venv\Scripts\python.exe -m src.neural_network.train
-.venv\Scripts\python.exe -m src.neural_network.evaluate
-.venv\Scripts\python.exe -m src.neural_network.visualize
-.venv\Scripts\python.exe -m src.neural_network.desktop
+```
+src/
+├── ocr/          runtime: modelo, segmentação de linhas, inferência, pós-processamento
+│   ├── model.py          CRNN, alfabeto, dataset (shards webdataset)
+│   ├── analyzer.py       página -> linhas (threshold Otsu + componentes conexos)
+│   ├── recognize.py      página -> texto
+│   └── postprocess.py    corretor léxico (acentos e caixa) para português real
+├── training/     treino e medição
+│   ├── train.py
+│   ├── evaluate.py
+│   └── compare_font_errors.py   relatório de erro por fonte
+├── datagen/      geração do dataset sintético
+│   ├── generator.py      shards de linhas de palavras (trdg) + linhas de páginas
+│   └── page_generator.py páginas completas (margens, parágrafos, campos, ruído)
+└── utils/paths.py
 ```
 
-Use `-i` or `--input` to select a checkpoint number, for example:
+O pipeline é: `page_generator`/`generator` escrevem shards em
+`data/raw/words-dataset` → `train` ajusta o CRNN → `recognize` usa
+`analyzer` para cortar as linhas e `postprocess` para corrigir o texto.
+
+## Ambiente
 
 ```powershell
-.venv\Scripts\python.exe -m src.neural_network.train --input 0 --output 1
-```
-
-For a worker-count comparison, always start from the same input checkpoint and
-write each run to a different output checkpoint so the source checkpoint stays
-unchanged. For example:
-
-```powershell
-.venv\Scripts\python.exe -m src.neural_network.train --input 0 --output 1 --workers 2 --seed 42
-.venv\Scripts\python.exe -m src.neural_network.train --input 0 --output 2 --workers 4 --seed 42
-```
-
-Use `--workers 0` to compare single-process loading, or `--batch-size` to test
-another batch size. The defaults remain 4 workers and batch size 256 on CUDA.
-Evaluation uses fixed orientation/normalization preprocessing (no random
-augmentation), so repeated evaluations of the same checkpoint are comparable.
-Training records train/validation loss, accuracy, macro-accuracy, and epoch
-duration in TensorBoard; each run identifies its input and output checkpoint
-in the run name and metadata. The saved checkpoint uses the epoch with the
-lowest validation loss. Evaluation records overall, macro, and per-class test
-accuracy in a separate TensorBoard run named for the evaluated checkpoint.
-
-Start TensorBoard from the repository root to inspect these runs:
-
-```powershell
-.venv\Scripts\python.exe -m tensorboard.main --logdir log/runs
-```
-
-To try a slightly smaller CNN while initializing it from the existing model,
-choose a new output checkpoint and add `--compact`:
-
-```powershell
-.venv\Scripts\python.exe -m src.neural_network.train --input 0 --output 3 --workers 2 --seed 42 --compact
-.venv\Scripts\python.exe -m src.neural_network.evaluate --input 3
-```
-
-The compact variant uses 28/56/112/112 convolution channels instead of
-32/64/128/128. Compatible convolutional, normalization, and dense weights are
-sliced from the input checkpoint to initialize it. The checkpoint records its
-architecture so evaluation and recognition tools can load either model.
-
-To train a new ByClass model while reusing compatible layers from the
-`emnist-3.0.pth`:
-
-```powershell
-.venv\Scripts\python.exe -m src.neural_network.train --input 3.0 --output 4.0
-```
-
-Existing checkpoints trained on EMNIST Balanced do not include the lowercase `i` class;
-train and use the new checkpoint to recognize it. The ByClass dataset must be available
-in `data/raw/`, and checkpoints are saved in `artifacts/checkpoints/`.
-
-### Image generation and segmentation
-
-Generate a sample image with character labels:
-
-```powershell
-.venv\Scripts\python.exe -m src.search_block.image_generator
-```
-
-Run the bounding-box validation examples:
-
-```powershell
-.venv\Scripts\python.exe -m src.search_block.validation
-```
-
-**Warning:** the validation script clears files in `data/test_images/` before
-generating its examples. Only run it when that directory contains disposable files.
-
-The OCR demo can be run with:
-
-```powershell
-.venv\Scripts\python.exe -m src.ocr.process
-```
-
-It expects the sample image configured in the script and clears files in
-`data/debug_errors/` before writing debug output. Check those paths before running.
-
-## Python environment
-
-Run all Python and pip commands through the repository's `.venv` interpreter.
-For example, install dependencies with:
-
-```powershell
+# na primeira vez, com o Python do sistema:
+py -3 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Rode tudo da raiz do repositório, sempre pelo interpretador do `.venv`.
+
+## Uso
+
+Reconhecer uma página (a imagem deve estar em `data/test_images/`):
+
+```powershell
+.venv\Scripts\python.exe -m src.ocr.recognize 11263
+.venv\Scripts\python.exe -m src.ocr.recognize 11263 0.4.8-ft --postprocess
+```
+
+Se existir um `.json` de mesmo nome ao lado da imagem (formato do
+`page_generator`: `{"clues": [{"text": ..., "bbox": {...}}]}`), o comando
+compara o resultado com o gabarito e imprime a acurácia de caractere. Sem JSON,
+imprime apenas o texto.
+
+Gerar o dataset de treino (lento: escreve shards de ~300 MB):
+
+```powershell
+.venv\Scripts\python.exe -m src.datagen.generator
+```
+
+Gerar páginas de exemplo (imagem + JSON com os boxes das linhas):
+
+```powershell
+.venv\Scripts\python.exe -m src.datagen.page_generator
+```
+
+Treinar e avaliar:
+
+```powershell
+.venv\Scripts\python.exe -m src.training.train --input 0.4.8-ft --output 0.4.9-ft --epochs 25
+.venv\Scripts\python.exe -m src.training.evaluate --input 0.4.9-ft
+```
+
+`evaluate` grava `artifacts/evaluate_errors.csv` (uma linha por erro, ordenado
+por distância de edição). O relatório agregado por fonte sai de:
+
+```powershell
+.venv\Scripts\python.exe -m src.training.compare_font_errors
+```
+
+## Dados
+
+Nada de `data/` ou dos pesos `.pth` vai para o git.
+
+| caminho | conteúdo |
+|---|---|
+| `data/raw/words-dataset/` | shards de treino/teste + metadados de fonte |
+| `data/raw/floresta/` | corpus de sentenças e vocabulário |
+| `data/test_images/` | 15 páginas sintéticas com gabarito — conjunto de regressão |
+| `artifacts/checkpoints/ocr/` | checkpoints do CRNN |
+
+As 15 páginas de `data/test_images/` são o único conjunto de referência atual.
+Não há script que apague esse diretório; se algum dia houver, ele deve ser
+tratado como destrutivo.
+
+## Histórico
+
+O projeto começou como um classificador EMNIST de caracteres (CNN, 28×28) e
+migrou para OCR de linha com CRNN. O código antigo está preservado na tag
+`emnist-legacy`:
+
+```powershell
+git show emnist-legacy --stat
 ```

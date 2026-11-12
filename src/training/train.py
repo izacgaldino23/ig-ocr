@@ -6,7 +6,7 @@ import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader, Sampler, random_split
 
-from src.crnn.model import (
+from src.ocr.model import (
     BLANK_IDX,
     CHAR2IDX,
     CRNN,
@@ -257,12 +257,15 @@ class Train:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Neural network training")
+    parser = argparse.ArgumentParser(description="CRNN fine-tuning")
+    parser.add_argument("--input", default="0.4.8-ft", help="checkpoint to load")
+    parser.add_argument("--output", default="0.4.9-ft", help="checkpoint to write")
+    parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument(
         "--persist",
         help="Save model without considering loaded model accuracy",
         action="store_true",
     )
     args = parser.parse_args()
-    train = Train("0.4.6-ft", "0.4.8-ft", batch_size=64, persist=args.persist)
-    train.execute(epochs=25)
+    train = Train(args.input, args.output, batch_size=64, persist=args.persist)
+    train.execute(epochs=args.epochs)

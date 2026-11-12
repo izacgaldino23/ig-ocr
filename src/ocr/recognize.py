@@ -6,10 +6,10 @@ import cv2
 import numpy as np
 import torch
 
-from src.crnn.evaluate import count_wrong_chars, decode_ctc
-from src.crnn.model import CHAR2IDX, CRNN
+from src.ocr.analyzer import Line, character_segmentation
+from src.ocr.model import CHAR2IDX, CRNN
 from src.ocr.postprocess import LexiconCorrector
-from src.search_block.analyzer import Line, character_segmentation
+from src.training.evaluate import count_wrong_chars, decode_ctc
 from src.utils.paths import test_image_path
 
 
@@ -110,10 +110,8 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore
 
     parser = argparse.ArgumentParser(description="CRNN page OCR")
-    parser.add_argument(
-        "image", nargs="?", default="48576", help="image inside data/test_images"
-    )
-    parser.add_argument("checkpoint", nargs="?", default="0.4.3-ft")
+    parser.add_argument("image", help="image name inside data/test_images")
+    parser.add_argument("checkpoint", nargs="?", default="0.4.8-ft")
     parser.add_argument(
         "--postprocess",
         action="store_true",
