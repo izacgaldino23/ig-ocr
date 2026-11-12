@@ -142,9 +142,10 @@ def evaluate(model_name, device, dataset, test_loader):
     print(
         f"Test dataset accuracy (Exact Match): {accuracy:.2f}% ({correct_count}/{total})"
     )
-    
+
+
 if __name__ == "__main__":
-    models = ["0.4.4-ft"]
+    models = ["0.4.6-ft", "0.4.8-ft"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset_dir = DATA_DIR / "words-dataset"

@@ -161,6 +161,21 @@ class TxtRecognitionGenerator:
             str(random.randint(0, 9)) if char == "#" else char for char in mask
         )
 
+    def add_punctuation(self, line: str):
+        # page lines are too few to teach quotes/dashes; the word set carries them
+        roll = random.random()
+        if roll < 0.10:
+            return f"“{line}”"
+        if roll < 0.14:
+            return f"‘{line}’"
+        if roll < 0.22:
+            words = line.split(" ")
+            if len(words) > 2:
+                idx = random.randint(1, len(words) - 1)
+                dash = random.choice([" - ", " – ", " — "])
+                return " ".join(words[:idx]) + dash + " ".join(words[idx:])
+        return line
+
     def generate_images_masked(
         self,
         count=1,
@@ -175,12 +190,18 @@ class TxtRecognitionGenerator:
         masks = [
             "R$ ##,##",
             "R$ ###,##",
+            "US$ ##,##",
             "##/##/2026",
             "##-##-2026",
             "(##) 9####-####",
             "(##) ####-####",
             "###.###.###-##",
             "##.###.###/####-##",
+            # ordinal and colon context: official docs are full of these
+            "nº ####/####",
+            "Art. #º",
+            "#ª Vara Cível",
+            "Tel: (##) 9####-####",
         ]
 
         content = []
@@ -237,6 +258,10 @@ class TxtRecognitionGenerator:
                 content[-1] = self.random_case(content[-1])
                 content.append(w)
 
+        content[-1] = self.random_case(content[-1])
+
+        content = [self.add_punctuation(line) for line in content]
+
         self.persist_images(
             content,
             blur,
@@ -257,6 +282,14 @@ class TxtRecognitionGenerator:
                 paragraphs = [page_generator.floresta_sentence() for _ in range(6)]
             else:
                 paragraphs = [page_generator.generate_sentence() for _ in range(6)]
+
+            # short field lines cover isolated values and the document chars;
+            # they go first, otherwise the full page drops them
+            if random.random() < 0.25:
+                paragraphs = [
+                    page_generator.document_line() for _ in range(random.randint(3, 5))
+                ] + paragraphs
+
             image, lines, font_path = page_generator.render(paragraphs)
 
             for line in lines:
@@ -381,10 +414,12 @@ class TxtRecognitionGenerator:
         print(f"Added {count} samples into WebDataset shard {shard_path}")
 
     def random_case(self, word: str):
+        # one style per sample, close to how documents are written:
+        # mostly lowercase, some sentence case, few headings in caps
         r = random.random()
-        if r < 0.33:
+        if r < 0.60:
             return word.lower()
-        elif r < 0.66:
+        elif r < 0.85:
             return word.capitalize()
         else:
             return word.upper()
@@ -401,7 +436,8 @@ if __name__ == "__main__":
         {"letter_spacing": 0, "bold": False, "italic": False},
         {"letter_spacing": 0, "bold": True, "italic": False},
         {"letter_spacing": 0, "bold": False, "italic": True},
-        {"letter_spacing": 1, "bold": True, "italic": True},
+        # letter_spacing=1 taught the model to insert spaces inside words
+        {"letter_spacing": 0, "bold": True, "italic": True},
     ]
 
     words_count = 300

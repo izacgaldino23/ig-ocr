@@ -17,6 +17,27 @@ def strip_accents(text: str) -> str:
     return "".join(char for char in decomposed if not unicodedata.combining(char))
 
 
+# the floresta treebank splits contractions ("de_a"), so these very common
+# words are missing from the corpus and would be "corrected" (da -> dá)
+CONTRACTIONS = frozenset(
+    {
+        "da",
+        "do",
+        "das",
+        "dos",
+        "num",
+        "numa",
+        "pelo",
+        "pela",
+        "pelos",
+        "pelas",
+        "aos",
+        "à",
+        "às",
+    }
+)
+
+
 class LexiconCorrector:
     def __init__(self) -> None:
         # corpus lives where src/crnn/generator.py downloads it
@@ -28,7 +49,7 @@ class LexiconCorrector:
             for word in floresta.words()
             if isinstance(word, str) and word.isalpha()
         )
-        self.valid_words = set(word_counts)
+        self.valid_words = set(word_counts) | CONTRACTIONS
 
         # accent-stripped form -> most frequent real spelling
         best: dict[str, tuple[str, int]] = {}
@@ -53,6 +74,7 @@ class LexiconCorrector:
             return token
 
         # preserve the token's case pattern
+        # shortcut: mixed-case tokens fall back to capitalize (SUiÇOS -> Suíços)
         if core.isupper():
             word = word.upper()
         elif core[:1].isupper():
@@ -65,7 +87,7 @@ class LexiconCorrector:
 
 if __name__ == "__main__":
     # Windows console may not be UTF-8 by default
-    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore
 
     corrector = LexiconCorrector()
 
@@ -75,5 +97,7 @@ if __name__ == "__main__":
     # valid words and unknown words pass through untouched
     assert corrector.correct_line("você fica") == "você fica"
     assert corrector.correct_line("lorem explicabo") == "lorem explicabo"
+    # floresta omits contractions; they must not be "fixed"
+    assert corrector.correct_line("da casa do pai") == "da casa do pai"
 
     print("LexiconCorrector self-check OK")

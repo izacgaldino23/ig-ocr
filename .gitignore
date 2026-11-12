@@ -8,3 +8,4 @@ log/profiler/
 log/runs/
 .zed/
 *.csv
+.cortexkit/

@@ -117,9 +117,13 @@ def character_segmentation(image_name: str, inverted=False):
     if img is None:
         raise FileNotFoundError(f"Invalid file {image_name}.png")
 
-    # simple binary conversion (for middle gray colors)
+    # Otsu adapts to the ink level, so faded scans (ink lighter than 50) still segment
     _, tresh = cv2.threshold(
-        img, 50, 255, cv2.THRESH_BINARY if not inverted else cv2.THRESH_BINARY_INV
+        img,
+        0,
+        255,
+        (cv2.THRESH_BINARY if not inverted else cv2.THRESH_BINARY_INV)
+        | cv2.THRESH_OTSU,
     )
 
     # dilate to join closer white from the same character

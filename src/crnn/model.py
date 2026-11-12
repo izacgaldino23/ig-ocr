@@ -15,6 +15,7 @@ from src.utils.paths import checkpoint_path
 ALPHABET = (
     "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "áàãâéêíóôõúçÁÀÃÂÉÊÍÓÔÕÚÇ.,!?-:;()\"'/#$ %"
+    "ºª–—“”‘’"
 )
 CHAR2IDX = {char: idx + 1 for idx, char in enumerate(ALPHABET)}
 IDX2CHAR = {idx + 1: char for idx, char in enumerate(ALPHABET)}
@@ -187,11 +188,48 @@ class CRNN(nn.Module):
         logits = self.fc(out)  # (B, 64, num_classes)
         return logits
 
+    def _init_new_rows(self, start: int):
+        # a fresh row must start viable: at the fine-tune lr Adam moves a weight
+        # only ~0.05 per run, so a zeroed row would never learn to fire
+        with torch.no_grad():
+            reference_weight = self.fc.weight.data[:start]
+            reference_bias = self.fc.bias.data[:start]
+            new_weight = self.fc.weight.data[start:]
+            new_weight.copy_(
+                reference_weight.mean(dim=0) + 0.01 * torch.randn_like(new_weight)
+            )
+            self.fc.bias.data[start:].fill_(float(reference_bias.min()))
+
     def load_if_exists(self) -> bool:
         file = checkpoint_path(self.name, "ocr")
         if file.exists():
             content = torch.load(file, weights_only=True)
             state_dict = content["model"]
+
+            # ALPHABET grew: keep the learned rows, re-init the appended ones
+            fc_weight = state_dict.get("fc.weight")
+            if fc_weight is not None:
+                rows = min(fc_weight.shape[0], self.fc.out_features)
+                with torch.no_grad():
+                    self.fc.weight.data[:rows] = fc_weight[:rows]
+                    self.fc.bias.data[:rows] = state_dict["fc.bias"][:rows]
+
+                # shortcut: bias below -5 means the row was never trained (runs
+                # 0.4.6/0.4.7 muted new chars at -10); re-init those too
+                start = rows
+                if start == self.fc.out_features:
+                    muted = (self.fc.bias.data < -5).nonzero()
+                    start = int(muted[0]) if len(muted) else self.fc.out_features
+                if start < self.fc.out_features:
+                    self._init_new_rows(start)
+
+                state_dict = {
+                    key: value
+                    for key, value in state_dict.items()
+                    if not key.startswith("fc.")
+                }
+                state_dict["fc.weight"] = self.fc.weight.data
+                state_dict["fc.bias"] = self.fc.bias.data
 
             # Tenta carregar normalmente primeiro
             try:

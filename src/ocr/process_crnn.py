@@ -107,7 +107,7 @@ def compare_with_json(
 
 if __name__ == "__main__":
     # Windows console may not be UTF-8 by default
-    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore
 
     parser = argparse.ArgumentParser(description="CRNN page OCR")
     parser.add_argument(
@@ -134,14 +134,19 @@ if __name__ == "__main__":
     predicted_text = "\n".join(text for _, text in results)
 
     print(f"Image: {args.image}")
-    # print(f"Predicted text: \n{predicted_text}\n")
+    print(f"Predicted text:\n{predicted_text}\n")
 
+    has_gt = test_image_path(f"{args.image}.json").exists()
     if args.postprocess:
         corrector = LexiconCorrector()
         corrected = [(line, corrector.correct_line(text)) for line, text in results]
         corrected_text = "\n".join(text for _, text in corrected)
         print(f"Corrected text: \n{corrected_text}\n")
-        compare_with_json(args.image, results, show_lines=False, title="RAW")
-        compare_with_json(args.image, corrected, title="CORRECTED")
-    else:
+        if has_gt:
+            compare_with_json(args.image, results, show_lines=False, title="RAW")
+            compare_with_json(args.image, corrected, title="CORRECTED")
+    elif has_gt:
         compare_with_json(args.image, results)
+
+    if not has_gt:
+        print("(no ground-truth json next to the image, comparison skipped)")

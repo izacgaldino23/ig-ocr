@@ -5,10 +5,9 @@ import re
 from pathlib import Path
 
 import nltk
+import numpy as np
 from faker import Faker
-from PIL import Image, ImageDraw, ImageFont
-from PIL.ImageDraw import ImageDraw as ID
-from PIL.ImageFont import ImageFont as IF
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from src.search_block.analyzer import Box
 from src.utils.paths import DATA_DIR, test_image_path
@@ -72,7 +71,46 @@ class PageGenerator:
         if self._floresta_index >= len(self._floresta_pool):
             random.shuffle(self._floresta_pool)
             self._floresta_index = 0
-        return sentence
+        return self.typography(sentence)
+
+    def typography(self, sentence: str) -> str:
+        # document punctuation the corpus never contains
+        words = sentence.split(" ")
+        if len(words) < 6:
+            return sentence
+
+        r = random.random()
+        if r < 0.15:
+            left, right = random.choice([("“", "”"), ("‘", "’")])
+            start = random.randint(1, len(words) - 3)
+            end = random.randint(start + 2, len(words) - 1)
+            words[start] = left + words[start]
+            words[end] = words[end] + right
+        elif r < 0.25:
+            words.insert(random.randint(1, len(words) - 2), random.choice(["–", "—"]))
+        return " ".join(words)
+
+    def document_line(self) -> str:
+        # short field lines as they appear in official documents
+        return random.choice(
+            [
+                "Processo nº 1234/2026",
+                "2ª Vara Cível",
+                "Art. 5º, inciso III",
+                "“Certidão de nascimento”",
+                "CPF: 123.456.789-00",
+                "Data: 04/05/2026",
+                "US$ 1.234,56",
+                "R$ 1.234,56",
+            ]
+        )
+
+    def scan_effects(self, image: Image.Image) -> Image.Image:
+        # scanned paper is never pure black ink on pure white
+        arr = np.asarray(image, dtype=np.float32)
+        arr += np.random.normal(0, 6, arr.shape)
+        image = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "L")
+        return image.filter(ImageFilter.GaussianBlur(random.uniform(0.2, 0.6)))
 
     def inject_accents(self, text):
         substitutions = {
@@ -164,7 +202,11 @@ class PageGenerator:
                     lines.append(line)
 
                     draw.text(
-                        (curr_x, curr_y), phrase, fill=0, font=font, spacing=spacing
+                        (curr_x, curr_y),
+                        phrase,
+                        fill=random.randint(0, 20),
+                        font=font,
+                        spacing=spacing,
                     )
 
                     curr_x = x
@@ -178,11 +220,9 @@ class PageGenerator:
             if curr_y > y2:
                 break
 
-        return image, lines, font_path
+        return self.scan_effects(image), lines, font_path
 
-    def generate(
-        self, paragraphs: list[str], margins=(10, 10, 10, 10), font_path=None
-    ):
+    def generate(self, paragraphs: list[str], margins=(10, 10, 10, 10), font_path=None):
         image, lines, _ = self.render(paragraphs, margins, font_path)
 
         file_name = f"{random.randint(1000, 99999)}"

@@ -55,8 +55,19 @@ class Train:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = CRNN(len(CHAR2IDX) + 1, model_name)
         self.criterion = nn.CTCLoss(blank=BLANK_IDX, zero_infinity=True)
+        backbone = [
+            parameter
+            for name, parameter in self.model.named_parameters()
+            if not name.startswith("fc.")
+        ]
         self.optimizer = optim.AdamW(
-            self.model.parameters(), lr=learning_rate, weight_decay=1e-5
+            [
+                {"params": backbone, "lr": learning_rate},
+                # the head must be able to build characters the backbone already
+                # sees; at 1e-5 it moves ~0.05 per run, far too slow for that
+                {"params": self.model.fc.parameters(), "lr": 1e-3},
+            ],
+            weight_decay=1e-5,
         )
         self.model_name = model_name
         self.output_name = output_name
@@ -253,5 +264,5 @@ if __name__ == "__main__":
         action="store_true",
     )
     args = parser.parse_args()
-    train = Train("0.4.3-ft", "0.4.4-ft", batch_size=64, persist=args.persist)
+    train = Train("0.4.6-ft", "0.4.8-ft", batch_size=64, persist=args.persist)
     train.execute(epochs=25)
