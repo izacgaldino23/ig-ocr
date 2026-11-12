@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>ig-ocr · debug</title>
+<style>
+  :root { --line: #d7dbe0; --ink: #1b1f24; --muted: #6b7280; --accent: #0b6bcb; --crop-h: 32px; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: #f5f6f8; color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 12px;
+    max-width: 960px; margin: 0 auto 20px;
+  }
+  h1 { margin: 0; font-size: 20px; letter-spacing: -0.02em; }
+  h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+  main { max-width: 960px; margin: 0 auto; display: grid; gap: 16px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.link { border: 0; background: none; color: var(--accent); padding: 0; text-decoration: underline; }
+  .drop {
+    border: 2px dashed var(--line); border-radius: 10px; padding: 28px; text-align: center;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .drop.over { border-color: var(--accent); background: #f0f6ff; }
+  .drop p { margin: 4px 0; }
+  img { max-width: 100%; display: block; }
+  #overlay {
+    border: 1px solid var(--line); border-radius: 6px; background: #fff;
+    max-height: min(60vh, 520px); width: auto; margin-inline: auto;
+  }
+  .line {
+    display: grid; grid-template-columns: 2.2rem minmax(0, 1fr) auto;
+    gap: 12px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line);
+  }
+  .line:first-child { border-top: 0; }
+  /* first line of a paragraph opens a visible gap */
+  .line.para-start { margin-top: 14px; border-top: 2px solid var(--line); }
+  .line .id { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; line-height: var(--crop-h); }
+  .line .id .para { display: block; font-size: 10px; color: var(--accent); }
+  .line .body { display: grid; gap: 6px; justify-items: start; min-width: 0; }
+  /* uniform height keeps every line comparable; width follows the crop ratio */
+  .line .body img {
+    height: var(--crop-h); width: auto; max-width: 100%; object-fit: contain;
+    object-position: left center; border: 1px solid var(--line); border-radius: 4px; background: #fff;
+  }
+  .line .text { font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 13px; overflow-wrap: anywhere; }
+  .line .text.changed { color: var(--accent); }
+  .line .ms { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; line-height: var(--crop-h); }
+  pre {
+    margin: 16px 0 0; padding: 12px; background: #fafbfc; border: 1px solid var(--line);
+    border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere;
+    font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 13px;
+  }
+  .error {
+    background: #fff1f0; border: 1px solid #f0b4ae; color: #8a1f16;
+    border-radius: 8px; padding: 10px 14px; font-size: 14px;
+  }
+  label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ig-ocr</h1>
+  <span class="muted">debug do pipeline · CPU</span>
+</header>
+
+<main>
+  <section class="card">
+    <div id="drop" class="drop">
+      <input id="file" type="file" accept="image/*" hidden>
+      <p>Arraste uma imagem aqui ou <button id="pick" class="link" type="button">escolha um arquivo</button></p>
+      <p class="muted" id="filename">nenhuma imagem selecionada</p>
+    </div>
+    <div class="row" style="margin-top: 14px">
+      <button id="analyze" type="button" disabled>1 · Segmentar linhas</button>
+      <span class="muted" id="analyze-meta"></span>
+    </div>
+  </section>
+
+  <section class="card" id="stage1" hidden>
+    <h2>Etapa 1 · linhas detectadas</h2>
+    <div class="row" style="margin-bottom: 12px">
+      <label><input type="checkbox" id="dark_text"> texto escuro em fundo claro</label>
+      <span class="muted" id="dark_text-auto"></span>
+    </div>
+    <img id="overlay" alt="linhas detectadas">
+  </section>
+
+  <section class="card" id="stage2" hidden>
+    <h2>Etapa 2 · texto reconhecido</h2>
+    <div class="row" style="margin-bottom: 12px">
+      <button id="recognize" type="button">Reconhecer texto</button>
+      <label><input type="checkbox" id="postprocess"> corrigir acentos e caixa</label>
+      <label><input type="checkbox" id="flow"> texto corrido</label>
+      <span class="muted" id="recognize-meta"></span>
+    </div>
+    <div id="rows"></div>
+    <pre id="fulltext" hidden></pre>
+  </section>
+
+  <div id="error" class="error" hidden></div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let file = null;
+  let darkTextTouched = false;
+
+  $("pick").onclick = () => $("file").click();
+  $("file").onchange = (event) => setFile(event.target.files[0]);
+  $("drop").ondragover = (event) => {
+    event.preventDefault();
+    $("drop").classList.add("over");
+  };
+  $("drop").ondragleave = () => $("drop").classList.remove("over");
+  $("drop").ondrop = (event) => {
+    event.preventDefault();
+    $("drop").classList.remove("over");
+    setFile(event.dataTransfer.files[0]);
+  };
+
+  function setFile(next) {
+    if (!next) return;
+    if (!next.type.startsWith("image/")) return showError("o arquivo não é uma imagem");
+    file = next;
+    $("filename").textContent = next.name + " · " + Math.round(next.size / 1024) + " KB";
+    $("analyze").disabled = false;
+    hideError();
+    $("stage1").hidden = true;
+    $("stage2").hidden = true;
+    $("fulltext").hidden = true;
+    $("rows").replaceChildren();
+  }
+
+  function showError(message) {
+    $("error").textContent = message;
+    $("error").hidden = false;
+  }
+
+  function hideError() {
+    $("error").hidden = true;
+  }
+
+  async function post(url, extra) {
+    const body = new FormData();
+    body.append("file", file);
+    for (const [key, value] of Object.entries(extra || {})) body.append(key, value);
+    const response = await fetch(url, { method: "POST", body });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || "HTTP " + response.status);
+    return data;
+  }
+
+  $("dark_text").onchange = () => {
+    darkTextTouched = true;
+    if (file) $("analyze").click();
+  };
+
+  $("analyze").onclick = async () => {
+    hideError();
+    $("analyze").disabled = true;
+    $("analyze-meta").textContent = "segmentando…";
+    try {
+      const extra = darkTextTouched ? { dark_text: $("dark_text").checked } : {};
+      const data = await post("/api/analyze", extra);
+      $("overlay").src = data.overlay_b64;
+      $("dark_text").checked = data.dark_text_used;
+      $("dark_text-auto").textContent = "detectado: " + (data.dark_text_used ? "sim" : "não");
+      $("analyze-meta").textContent =
+        data.lines.length + " linhas · " + data.ms + " ms · " + data.width + "×" + data.height;
+      $("stage1").hidden = false;
+      $("stage2").hidden = data.lines.length === 0;
+      $("fulltext").hidden = true;
+      $("rows").replaceChildren();
+      if (data.lines.length === 0) {
+        showError("nenhuma linha encontrada — tente inverter a binarização acima");
+      }
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      $("analyze").disabled = false;
+    }
+  };
+
+  $("recognize").onclick = async () => {
+    hideError();
+    $("recognize").disabled = true;
+    $("recognize-meta").textContent = "reconhecendo…";
+    try {
+      const extra = {
+        postprocess: $("postprocess").checked,
+        flow: $("flow").checked,
+        dark_text: $("dark_text").checked,
+      };
+      const data = await post("/api/recognize", extra);
+      renderRows(data.lines);
+      $("fulltext").textContent = data.text;
+      $("fulltext").hidden = false;
+      $("recognize-meta").textContent =
+        data.lines.length + " linhas · " + data.paragraphs + " parágrafos · " + data.ms + " ms";
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      $("recognize").disabled = false;
+    }
+  };
+
+  function renderRows(lines) {
+    const rows = lines.map((line, index) => {
+      const row = document.createElement("div");
+      // a paragraph break is visible as a gap; line 1 already opens one
+      row.className = index > 0 && line.paragraph !== lines[index - 1].paragraph
+        ? "line para-start"
+        : "line";
+
+      const id = document.createElement("span");
+      id.className = "id";
+      id.textContent = line.id;
+      if (row.className !== "line") {
+        const para = document.createElement("span");
+        para.className = "para";
+        para.textContent = "¶" + (line.paragraph + 1);
+        id.append(para);
+      }
+
+      const crop = document.createElement("img");
+      crop.src = line.crop_b64;
+      crop.alt = "linha " + line.id;
+
+      const text = document.createElement("span");
+      text.className = line.changed ? "text changed" : "text";
+      text.textContent = line.text || "(vazio)";
+
+      const body = document.createElement("div");
+      body.className = "body";
+      body.append(crop, text);
+
+      const ms = document.createElement("span");
+      ms.className = "ms";
+      ms.textContent = line.ms + " ms";
+
+      row.append(id, body, ms);
+      return row;
+    });
+    $("rows").replaceChildren(...rows);
+
+    // one crop height for every line: the tallest that still fits the widest crop
+    const crops = [...$("rows").querySelectorAll(".body img")];
+    Promise.all(crops.map((img) => img.decode().catch(() => {}))).then(() => {
+      const ratios = crops.map((img) => img.naturalWidth / img.naturalHeight).filter((r) => r > 0);
+      if (!ratios.length) return;
+      const available = crops[0].parentElement.clientWidth;
+      const height = Math.min(32, Math.max(16, Math.floor(available / Math.max(...ratios))));
+      $("rows").style.setProperty("--crop-h", height + "px");
+    });
+  }
+</script>
+</body>
+</html>

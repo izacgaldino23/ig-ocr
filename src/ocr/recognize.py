@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import torch
 
-from src.ocr.analyzer import Line, character_segmentation
+from src.ocr.analyzer import Line, character_segmentation, group_paragraphs
 from src.ocr.model import CHAR2IDX, CRNN
 from src.ocr.postprocess import LexiconCorrector
 from src.training.evaluate import count_wrong_chars, decode_ctc
@@ -31,18 +31,27 @@ def process_line(roi: np.ndarray, img_height=32) -> torch.Tensor:
     return tensor.unsqueeze(0)
 
 
-def recognize_line(
-    model: CRNN, device: torch.device, img: np.ndarray, line: Line
-) -> str:
+def line_crop(img: np.ndarray, line: Line) -> np.ndarray:
     x, y, w, h = line.bbox.get_values()
     if w <= 0 or h <= 0:
-        return ""
+        return img[0:0, 0:0]
 
     # trailing period blobs are discarded by the analyzer noise filter,
     # so the crop must reach past the line bbox to include them
     pad = int(h * 0.3)
     x_end = min(x + w + pad, img.shape[1])
-    input_tensor = process_line(img[y : y + h, x:x_end]).to(device)
+
+    return img[y : y + h, x:x_end]
+
+
+def recognize_line(
+    model: CRNN, device: torch.device, img: np.ndarray, line: Line
+) -> str:
+    roi = line_crop(img, line)
+    if roi.size == 0:
+        return ""
+
+    input_tensor = process_line(roi).to(device)
 
     with torch.no_grad():
         # Forward pass: (1, T, Num_Classes)
@@ -58,6 +67,41 @@ def process_page(
     img, lines = character_segmentation(image_name, inverted=True)
 
     return [(line, recognize_line(model, device, img, line)) for line in lines]
+
+
+def _join_flow(lines: list[str]) -> str:
+    """Wrapped lines joined by a space, except after a hyphen.
+
+    The corpus has hyphenated words (bastar-se) and the wrap can land on the
+    hyphen, so the next line must continue the word instead of starting a new
+    one.
+
+    shortcut: a real hyphenation break (docu- / mento) keeps the hyphen too;
+    upgrade by checking both candidates against the lexicon.
+    """
+    text = ""
+    for line in lines:
+        if not text:
+            text = line
+        elif text.rstrip().endswith("-"):
+            text = text.rstrip() + line.lstrip()
+        else:
+            text = text + " " + line
+    return text
+
+
+def page_text(texts: list[str], paragraph_ids: list[int], flow=False) -> str:
+    """Paragraphs separated by a blank line.
+
+    flow joins the wrapped lines of a paragraph with a space instead of keeping
+    the visual line breaks.
+    """
+    blocks: dict[int, list[str]] = {}
+    for text, paragraph_id in zip(texts, paragraph_ids):
+        blocks.setdefault(paragraph_id, []).append(text)
+
+    join = _join_flow if flow else "\n".join
+    return "\n\n".join(join(block) for block in blocks.values())
 
 
 def compare_with_json(
@@ -117,6 +161,17 @@ if __name__ == "__main__":
         action="store_true",
         help="enable the lexicon accent/case corrector (real Portuguese text)",
     )
+    parser.add_argument(
+        "--para-ratio",
+        type=float,
+        default=1.5,
+        help="line advance over the page pitch that starts a new paragraph",
+    )
+    parser.add_argument(
+        "--flow",
+        action="store_true",
+        help="join a paragraph's wrapped lines with a space instead of a newline",
+    )
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -129,7 +184,8 @@ if __name__ == "__main__":
     model.eval()
 
     results = process_page(args.image, model, device)
-    predicted_text = "\n".join(text for _, text in results)
+    paragraphs = group_paragraphs([line for line, _ in results], args.para_ratio)
+    predicted_text = page_text([text for _, text in results], paragraphs, args.flow)
 
     print(f"Image: {args.image}")
     print(f"Predicted text:\n{predicted_text}\n")
@@ -138,7 +194,9 @@ if __name__ == "__main__":
     if args.postprocess:
         corrector = LexiconCorrector()
         corrected = [(line, corrector.correct_line(text)) for line, text in results]
-        corrected_text = "\n".join(text for _, text in corrected)
+        corrected_text = page_text(
+            [text for _, text in corrected], paragraphs, args.flow
+        )
         print(f"Corrected text: \n{corrected_text}\n")
         if has_gt:
             compare_with_json(args.image, results, show_lines=False, title="RAW")

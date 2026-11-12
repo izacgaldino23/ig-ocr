@@ -10,5 +10,10 @@ nltk==3.10.4
 trdg==1.8.0
 webdataset==1.0.2
 
+# web debug UI
+fastapi==0.162.5
+uvicorn==0.54.0
+python-multipart==0.0.33
+
 # dev
 ruff==0.17.1

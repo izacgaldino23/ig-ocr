@@ -23,6 +23,9 @@ src/
 ├── datagen/      geração do dataset sintético
 │   ├── generator.py      shards de linhas de palavras (trdg) + linhas de páginas
 │   └── page_generator.py páginas completas (margens, parágrafos, campos, ruído)
+├── web/          tela local de debug (FastAPI)
+│   ├── app.py            upload -> linhas -> texto, servidor em 127.0.0.1:8000
+│   └── static/index.html frontend sem build
 └── utils/paths.py
 ```
 
@@ -53,6 +56,39 @@ Se existir um `.json` de mesmo nome ao lado da imagem (formato do
 `page_generator`: `{"clues": [{"text": ..., "bbox": {...}}]}`), o comando
 compara o resultado com o gabarito e imprime a acurácia de caractere. Sem JSON,
 imprime apenas o texto.
+
+As linhas são agrupadas em parágrafos pelo ritmo vertical da página (a distância
+entre linhas consecutivas contra o passo normal da página). O texto sai com uma
+linha em branco entre parágrafos; `--flow` junta as linhas de um parágrafo em
+texto corrido, e `--para-ratio` ajusta o quanto um espaço precisa ser maior que
+o passo normal para abrir parágrafo (padrão `1.5`):
+
+```powershell
+.venv\Scripts\python.exe -m src.ocr.recognize 11263 --flow
+.venv\Scripts\python.exe -m src.ocr.recognize 11263 --para-ratio 1.8
+```
+
+### Tela de debug
+
+Sobe um servidor local (só `127.0.0.1`) para enviar uma imagem e ver o pipeline
+em duas etapas: as linhas detectadas sobre a página, depois o crop e o texto de
+cada linha.
+
+```powershell
+.venv\Scripts\python.exe -m src.web.app
+```
+
+Abra http://127.0.0.1:8000. O startup leva alguns segundos porque o modelo é
+carregado uma única vez. A inferência roda em CPU; o primeiro clique com
+"corrigir acentos e caixa" marcado carrega o corpus floresta (~1 s).
+
+A etapa 2 mostra o parágrafo de cada linha (separador e `¶N`), e o checkbox
+"texto corrido" alterna entre o texto visual (quebras da página) e o texto
+corrido (linhas do parágrafo unidas por espaço).
+
+A imagem é reduzida para no máximo 2500 px de largura e a orientação EXIF é
+aplicada antes de tudo. "Texto escuro em fundo claro" é detectado pela média da
+imagem e pode ser invertido na tela quando a segmentação falhar.
 
 Gerar o dataset de treino (lento: escreve shards de ~300 MB):
 

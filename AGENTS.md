@@ -19,6 +19,8 @@
 - `src\datagen\` generates the synthetic dataset: `generator.py` writes the word
   and page-line shards, `page_generator.py` renders full pages with a JSON clue
   file.
+- `src\web\` is the local debug UI: `app.py` (FastAPI, upload to lines to text)
+  and `static\index.html`.
 - `src\utils\paths.py` defines paths for data, checkpoints, and test images.
 - Model checkpoints live in `artifacts\checkpoints\ocr\`; datasets and generated
   images live under `data\`.
@@ -39,6 +41,12 @@ Run modules from the repository root and use the project interpreter, for exampl
 ```powershell
 .venv\Scripts\python.exe -m src.ocr.recognize 11263 0.4.8-ft
 .venv\Scripts\python.exe -m src.training.evaluate --input 0.4.8-ft
+```
+
+Start the debug UI (binds 127.0.0.1:8000, CPU inference):
+
+```powershell
+.venv\Scripts\python.exe -m src.web.app
 ```
 
 Run the tests with:

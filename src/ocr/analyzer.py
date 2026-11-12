@@ -1,3 +1,5 @@
+import statistics
+
 import cv2
 import numpy as np
 
@@ -64,8 +66,6 @@ class Line:
     def __init__(self, boxes: list[Box] | None) -> None:
         self.bbox = Box()
         self.boxes: list[Box] = []
-        self.baseline = 0
-        self.baseline_defined = False
 
         if boxes:
             for box in boxes:
@@ -77,14 +77,7 @@ class Line:
         if len(self.boxes) == 1:
             x, y, w, h = box.get_values()
             self.bbox.set_values((x, y, w, h))
-            self.baseline = y + h
             return
-
-        # Update baseline
-        box_y = box.y + box.h
-        if not self.baseline_defined and abs(box_y - self.baseline) > 2:
-            self.baseline = min(self.baseline, box_y)
-            self.baseline_defined = True
 
         self.bbox.set_x(min(self.bbox.x, box.x))
         self.bbox.set_y(min(self.bbox.y, box.y))
@@ -100,23 +93,40 @@ class Line:
     def sort_boxes(self, inverse=False):
         self.boxes = sorted(self.boxes, key=lambda item: item.x)
 
-    def normalize_boxes_height(self):
-        for box in self.boxes:
-            _, y = self.bbox.get_second_coord()
-            x1, y1 = box.get_second_coord()
 
-            box.set_y(min(self.bbox.y, box.y))
+def group_paragraphs(lines: list[Line], ratio=1.5) -> list[int]:
+    """Paragraph index per line, from the page's vertical rhythm.
 
-            box.set_second_coord(x1, max(y, y1))
-            box.h = max(box.h, y - box.y)
+    The baseline is the median of the line's component bottoms: bbox edges
+    move with accents and descenders, bottoms mostly sit on the baseline.
+    """
+    ids = [0] * len(lines)
+    if len(lines) < 2:
+        return ids
+
+    order = sorted(range(len(lines)), key=lambda i: lines[i].bbox.y)
+    baselines = [
+        statistics.median(
+            [b.y + b.h for b in lines[i].boxes] or [lines[i].bbox.y + lines[i].bbox.h]
+        )
+        for i in order
+    ]
+    advances = [baselines[j + 1] - baselines[j] for j in range(len(baselines) - 1)]
+
+    # the pitch is the smallest common advance: paragraphs only ever widen the
+    # gap, so the median lands on the paragraph gap when short ones dominate
+    pitch = max(1, sorted(advances)[len(advances) // 10])
+
+    current = 0
+    for j, advance in enumerate(advances):
+        if advance > ratio * pitch:
+            current += 1
+        ids[order[j + 1]] = current
+
+    return ids
 
 
-def character_segmentation(image_name: str, inverted=False):
-    # read image on gray scale
-    img = cv2.imread(f"{test_image_path(image_name)}.png", cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        raise FileNotFoundError(f"Invalid file {image_name}.png")
-
+def segment_page(img: np.ndarray, inverted=False) -> list[Line]:
     # Otsu adapts to the ink level, so faded scans (ink lighter than 50) still segment
     _, tresh = cv2.threshold(
         img,
@@ -143,9 +153,16 @@ def character_segmentation(image_name: str, inverted=False):
             bbox = Box(x, y, w, h)
             raw_boxes.append(bbox)
 
-    sorted_boxes_by_line = sort_boxes_by_line(raw_boxes)
+    return sort_boxes_by_line(raw_boxes)
 
-    return img, sorted_boxes_by_line
+
+def character_segmentation(image_name: str, inverted=False):
+    # read image on gray scale
+    img = cv2.imread(f"{test_image_path(image_name)}.png", cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise FileNotFoundError(f"Invalid file {image_name}.png")
+
+    return img, segment_page(img, inverted)
 
 
 def sort_boxes_by_line(boxes: list[Box], gap=2) -> list[Line]:
@@ -177,58 +194,4 @@ def sort_boxes_by_line(boxes: list[Box], gap=2) -> list[Line]:
     # sort lines by y
     lines = sorted(lines, key=lambda l: l.get_box_by_index(0).y)
 
-    # adjust all lines by baseline
-    max_line_height = lines[0].baseline - lines[0].bbox.y
-    for line in lines[1:]:
-        max_line_height = max(max_line_height, line.baseline - line.bbox.y)
-
-    # normalize boxes inside each line
-    # curr_y = 0
-    # for line in lines:
-    #     curr_y = line.bbox.y + line.bbox.h
-    #     if line.baseline - line.bbox.y < max_line_height:
-    #         line.bbox.set_y(line.baseline - max_line_height)
-    # line.normalize_boxes_height()
-
-    # parse the boxes to a 1d list with all boxes in the correct order
-    # final_boxes = [box for line in lines for box in line]
-
     return lines
-
-
-def boxes_to_line(lines: list[Line]) -> list[Line]:
-    return []
-
-
-if __name__ == "__main__":
-    image_name = "3216"
-    img, lines = character_segmentation(image_name, True)
-    # print(lines)
-    # cv2.imwrite(f"{test_image_path(image_name)}-dilatted.png", img)
-    for line in lines:
-        start = (line.bbox.x, line.bbox.y)
-        end = line.bbox.get_second_coord()
-        cv2.rectangle(img, start, end, 0, 1)
-        # for b in line.boxes:
-        #     start = (b.x, b.y)
-        #     end = b.get_second_coord()
-        #     cv2.rectangle(img, start, end, 0, 1)
-
-        # cv2.line(
-        #     img,
-        #     [line.bbox.x - 4, line.bbox.y + line.bbox.h],
-        #     [line.bbox.x + line.bbox.w + 4, line.bbox.y + line.bbox.h],
-        #     0,
-        #     2,
-        # )
-
-    h, w = img.shape
-
-    height = 900
-    width = (height * w) / h
-
-    resized_image = cv2.resize(img, (int(width), int(height)))
-
-    cv2.imshow("boxes", resized_image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()

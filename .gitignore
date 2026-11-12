@@ -7,3 +7,4 @@ __pycache__/
 .zed/
 .cortexkit/
 .ruff_cache/
+.playwright-mcp/
