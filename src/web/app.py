@@ -25,7 +25,12 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from src.ocr.analyzer import Line, group_paragraphs, segment_page
 from src.ocr.model import CHAR2IDX, CRNN
 from src.ocr.postprocess import LexiconCorrector
-from src.ocr.recognize import line_crop, page_text, recognize_line
+from src.ocr.recognize import (
+    fix_hyphen_spacing,
+    line_crop,
+    page_text,
+    recognize_line,
+)
 
 CHECKPOINT = "0.4.8-ft"
 DEVICE = torch.device("cpu")
@@ -133,6 +138,11 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ok", "model": MODEL is not None}
+
+
 @app.post("/api/analyze")
 def analyze(
     file: Annotated[UploadFile, File()],
@@ -165,21 +175,24 @@ def recognize(
     file: Annotated[UploadFile, File()],
     postprocess: Annotated[bool, Form()] = False,
     flow: Annotated[bool, Form()] = False,
+    para_ratio: Annotated[float, Form()] = 1.5,
     dark_text: Annotated[bool | None, Form()] = None,
 ):
     image = read_image(file)
     inverted = bool(image.mean() > 127) if dark_text is None else dark_text
     lines = segment_page(image, inverted)
-    corrector = get_corrector() if postprocess else None
+    # the lexicon resolves accents and flow hyphenation, so both flags need it
+    corrector = get_corrector() if (postprocess or flow) else None
+    lexicon = corrector.valid_words if corrector else None
     model = get_model()
-    paragraphs = group_paragraphs(lines)
+    paragraphs = group_paragraphs(lines, para_ratio)
 
     start = time.perf_counter()
     rows = []
     for idx, line in enumerate(lines, start=1):
         line_start = time.perf_counter()
         with INFERENCE_LOCK:
-            text = recognize_line(model, DEVICE, image, line)
+            text = fix_hyphen_spacing(recognize_line(model, DEVICE, image, line))
         line_ms = (time.perf_counter() - line_start) * 1000
         corrected = corrector.correct_line(text) if corrector else text
 
@@ -200,7 +213,7 @@ def recognize(
     return {
         "lines": rows,
         "paragraphs": paragraphs[-1] + 1 if paragraphs else 0,
-        "text": page_text([row["text"] for row in rows], paragraphs, flow),
+        "text": page_text([row["text"] for row in rows], paragraphs, flow, lexicon),
         "ms": round(elapsed, 1),
     }
 

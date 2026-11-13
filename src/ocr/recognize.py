@@ -1,5 +1,6 @@
 import argparse
 import json
+import re
 import sys
 
 import cv2
@@ -69,28 +70,50 @@ def process_page(
     return [(line, recognize_line(model, device, img, line)) for line in lines]
 
 
-def _join_flow(lines: list[str]) -> str:
-    """Wrapped lines joined by a space, except after a hyphen.
+def _join_flow(lines: list[str], lexicon: set[str] | None = None) -> str:
+    """Wrapped lines joined by a space, except across a hyphen.
 
-    The corpus has hyphenated words (bastar-se) and the wrap can land on the
-    hyphen, so the next line must continue the word instead of starting a new
-    one.
+    Two different things end a line with a hyphen: a real compound (bastar-se)
+    and a word broken by hyphenation (docu- / mento). The lexicon decides: the
+    hyphen is dropped only when the joined form is a known word.
 
-    shortcut: a real hyphenation break (docu- / mento) keeps the hyphen too;
-    upgrade by checking both candidates against the lexicon.
+    Without a lexicon both forms are unknown, so the hyphen is kept - correct
+    for the corpus, wrong for a hyphenated scan.
     """
     text = ""
     for line in lines:
+        head, tail = text.rstrip(), line.lstrip()
         if not text:
             text = line
-        elif text.rstrip().endswith("-"):
-            text = text.rstrip() + line.lstrip()
+        elif not head.endswith("-"):
+            text = head + " " + tail
         else:
-            text = text + " " + line
+            stem = head[:-1]
+            prefix = stem[max(stem.rfind(" "), stem.rfind("\n")) + 1 :]
+            suffix = re.match(r"[^\W\d_]+", tail)
+            joined = prefix + (suffix.group() if suffix else "")
+            if lexicon and len(joined) > len(prefix) and joined.casefold() in lexicon:
+                text = head[:-1] + tail
+            else:
+                text = head + tail
     return text
 
 
-def page_text(texts: list[str], paragraph_ids: list[int], flow=False) -> str:
+def fix_hyphen_spacing(text: str) -> str:
+    """Close the space inside a hyphenated word ("bastar- se" -> "bastar-se").
+
+    A dash used as punctuation is spaced on both sides ("a - b"), so only a
+    hyphen glued to the previous letter is treated as part of the word.
+    """
+    return re.sub(r"(?<=\w)- (?=\w)", "-", text)
+
+
+def page_text(
+    texts: list[str],
+    paragraph_ids: list[int],
+    flow=False,
+    lexicon: set[str] | None = None,
+) -> str:
     """Paragraphs separated by a blank line.
 
     flow joins the wrapped lines of a paragraph with a space instead of keeping
@@ -98,10 +121,11 @@ def page_text(texts: list[str], paragraph_ids: list[int], flow=False) -> str:
     """
     blocks: dict[int, list[str]] = {}
     for text, paragraph_id in zip(texts, paragraph_ids):
-        blocks.setdefault(paragraph_id, []).append(text)
+        blocks.setdefault(paragraph_id, []).append(fix_hyphen_spacing(text))
 
-    join = _join_flow if flow else "\n".join
-    return "\n\n".join(join(block) for block in blocks.values())
+    if flow:
+        return "\n\n".join(_join_flow(block, lexicon) for block in blocks.values())
+    return "\n\n".join("\n".join(block) for block in blocks.values())
 
 
 def compare_with_json(
@@ -185,17 +209,22 @@ if __name__ == "__main__":
 
     results = process_page(args.image, model, device)
     paragraphs = group_paragraphs([line for line, _ in results], args.para_ratio)
-    predicted_text = page_text([text for _, text in results], paragraphs, args.flow)
+
+    # the lexicon resolves hyphenation in flow text, so both flags need it
+    corrector = LexiconCorrector() if (args.postprocess or args.flow) else None
+    lexicon = corrector.valid_words if corrector else None
+    predicted_text = page_text(
+        [text for _, text in results], paragraphs, args.flow, lexicon
+    )
 
     print(f"Image: {args.image}")
     print(f"Predicted text:\n{predicted_text}\n")
 
     has_gt = test_image_path(f"{args.image}.json").exists()
     if args.postprocess:
-        corrector = LexiconCorrector()
         corrected = [(line, corrector.correct_line(text)) for line, text in results]
         corrected_text = page_text(
-            [text for _, text in corrected], paragraphs, args.flow
+            [text for _, text in corrected], paragraphs, args.flow, lexicon
         )
         print(f"Corrected text: \n{corrected_text}\n")
         if has_gt:

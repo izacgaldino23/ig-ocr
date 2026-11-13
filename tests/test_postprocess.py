@@ -28,6 +28,10 @@ class LexiconCorrectorTests(unittest.TestCase):
             self.corrector.correct_line("da casa do pai"), "da casa do pai"
         )
 
+    def test_mixed_case_follows_the_letter_majority(self) -> None:
+        # the model's case slips are per letter, so the majority is the intent
+        self.assertEqual(self.corrector.correct_line("SUiÇOS"), "SUÍÇOS")
+
 
 class StripAccentsTests(unittest.TestCase):
     def test_strips_combining_marks(self) -> None:

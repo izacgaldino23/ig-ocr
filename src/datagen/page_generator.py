@@ -13,6 +13,22 @@ from src.ocr.analyzer import Box
 from src.utils.paths import DATA_DIR, test_image_path
 
 
+def rejoin_hyphenated(tokens: list[str]) -> list[str]:
+    """Undo the treebank split of hyphenated words.
+
+    The floresta reader yields "bastar-" and "se" as separate tokens, so a
+    plain join teaches the model a phantom space. A lone "-" is a real dash and
+    stays its own token.
+    """
+    joined: list[str] = []
+    for token in tokens:
+        if joined and len(joined[-1]) > 1 and joined[-1].endswith("-"):
+            joined[-1] += token
+        else:
+            joined.append(token)
+    return joined
+
+
 class ContentLine:
     def __init__(self, text: str = ""):
         self.text = text
@@ -48,10 +64,12 @@ class PageGenerator:
             pool = []
             sentences = floresta.sents()
             for sentence in sentences:
+                tokens = rejoin_hyphenated([str(word) for word in sentence])
+
                 # treebank artifacts: '_' joins multiword tokens,
                 # «» are quote marks and {} are bracket marks
                 cleaned = (
-                    " ".join(str(word) for word in sentence)
+                    " ".join(tokens)
                     .replace("_", " ")
                     .replace("«", "")
                     .replace("»", "")

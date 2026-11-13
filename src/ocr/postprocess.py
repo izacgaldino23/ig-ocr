@@ -74,8 +74,11 @@ class LexiconCorrector:
             return token
 
         # preserve the token's case pattern
-        # shortcut: mixed-case tokens fall back to capitalize (SUiÇOS -> Suíços)
-        if core.isupper():
+        # shortcut: majority vote assumes most letters kept their case, so a
+        # token like "iPHONE" still comes out as "IPHONE"
+        upper = sum(1 for char in core if char.isupper())
+        lower = sum(1 for char in core if char.islower())
+        if upper > lower:
             word = word.upper()
         elif core[:1].isupper():
             word = word.capitalize()

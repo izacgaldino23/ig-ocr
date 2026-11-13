@@ -67,6 +67,10 @@
     border-radius: 8px; padding: 10px 14px; font-size: 14px;
   }
   label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+  input[type="number"] {
+    width: 4.2em; font: inherit; font-size: 13px; padding: 2px 4px;
+    border: 1px solid var(--line); border-radius: 5px;
+  }
 </style>
 </head>
 <body>
@@ -102,7 +106,10 @@
     <div class="row" style="margin-bottom: 12px">
       <button id="recognize" type="button">Reconhecer texto</button>
       <label><input type="checkbox" id="postprocess"> corrigir acentos e caixa</label>
-      <label><input type="checkbox" id="flow"> texto corrido</label>
+      <label title="resolve hifenização pelo léxico (carrega na primeira vez)"><input type="checkbox" id="flow"> texto corrido</label>
+      <label title="avanço vertical que separa parágrafos, em múltiplos do passo da linha">razão de parágrafo
+        <input type="number" id="para_ratio" value="1.5" min="1" max="5" step="0.1">
+      </label>
       <span class="muted" id="recognize-meta"></span>
     </div>
     <div id="rows"></div>
@@ -201,6 +208,7 @@
       const extra = {
         postprocess: $("postprocess").checked,
         flow: $("flow").checked,
+        para_ratio: $("para_ratio").value,
         dark_text: $("dark_text").checked,
       };
       const data = await post("/api/recognize", extra);
@@ -257,14 +265,24 @@
 
     // one crop height for every line: the tallest that still fits the widest crop
     const crops = [...$("rows").querySelectorAll(".body img")];
-    Promise.all(crops.map((img) => img.decode().catch(() => {}))).then(() => {
-      const ratios = crops.map((img) => img.naturalWidth / img.naturalHeight).filter((r) => r > 0);
-      if (!ratios.length) return;
-      const available = crops[0].parentElement.clientWidth;
-      const height = Math.min(32, Math.max(16, Math.floor(available / Math.max(...ratios))));
-      $("rows").style.setProperty("--crop-h", height + "px");
-    });
+    Promise.all(crops.map((img) => img.decode().catch(() => {}))).then(fitCropHeight);
   }
+
+  function fitCropHeight() {
+    const crops = [...$("rows").querySelectorAll(".body img")];
+    const ratios = crops.map((img) => img.naturalWidth / img.naturalHeight).filter((r) => r > 0);
+    if (!ratios.length) return;
+    const available = crops[0].parentElement.clientWidth;
+    const height = Math.min(32, Math.max(16, Math.floor(available / Math.max(...ratios))));
+    $("rows").style.setProperty("--crop-h", height + "px");
+  }
+
+  // the fit depends on the column width, so a resize has to recompute it
+  let fitFrame = 0;
+  window.addEventListener("resize", () => {
+    cancelAnimationFrame(fitFrame);
+    fitFrame = requestAnimationFrame(fitCropHeight);
+  });
 </script>
 </body>
 </html>

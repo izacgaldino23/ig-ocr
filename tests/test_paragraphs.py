@@ -69,6 +69,37 @@ class PageTextTests(unittest.TestCase):
             "conseguem bastar-\nse agora",
         )
 
+    def test_flow_drops_a_wrap_hyphen_when_the_joined_word_is_known(self) -> None:
+        # docu- / mento is one word broken by the line, not a compound
+        self.assertEqual(
+            page_text(
+                ["a docu-", "mento saiu"], [0, 0], flow=True, lexicon={"documento"}
+            ),
+            "a documento saiu",
+        )
+
+    def test_flow_keeps_a_compound_hyphen_even_with_a_lexicon(self) -> None:
+        # bastar-se is one corpus token; "bastarse" is not a word
+        self.assertEqual(
+            page_text(
+                ["conseguem bastar-", "se agora"],
+                [0, 0],
+                flow=True,
+                lexicon={"documento"},
+            ),
+            "conseguem bastar-se agora",
+        )
+
+    def test_closes_the_space_inside_a_hyphenated_word(self) -> None:
+        # the treebank split "bastar-se" into two tokens, so old training pages
+        # carry the phantom space on a single line
+        self.assertEqual(
+            page_text(["conseguem bastar- se em"], [0]), "conseguem bastar-se em"
+        )
+
+    def test_keeps_a_dash_spaced_on_both_sides(self) -> None:
+        self.assertEqual(page_text(["Benfica - Sporting"], [0]), "Benfica - Sporting")
+
 
 if __name__ == "__main__":
     unittest.main()
