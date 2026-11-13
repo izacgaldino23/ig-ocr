@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from src.ocr.analyzer import Line, group_paragraphs, segment_page
+from src.ocr.analyzer import Line, find_page, group_paragraphs, segment_page
 from src.ocr.model import CHAR2IDX, CRNN
 from src.ocr.postprocess import LexiconCorrector
 from src.ocr.recognize import (
@@ -150,6 +150,12 @@ def analyze(
 ):
     image = read_image(file)
 
+    # a photo has a page in the middle of a background: straighten it first,
+    # then decide the polarity from the page alone
+    page = find_page(image)
+    if page is not None:
+        image = page
+
     # contours are found on white blobs, so dark text on light paper inverts
     inverted = bool(image.mean() > 127) if dark_text is None else dark_text
 
@@ -161,6 +167,7 @@ def analyze(
         "width": image.shape[1],
         "height": image.shape[0],
         "dark_text_used": inverted,
+        "page_warped": page is not None,
         "lines": [
             {"id": idx, "bbox": line.bbox.to_dict()}
             for idx, line in enumerate(lines, start=1)
@@ -179,6 +186,11 @@ def recognize(
     dark_text: Annotated[bool | None, Form()] = None,
 ):
     image = read_image(file)
+
+    page = find_page(image)
+    if page is not None:
+        image = page
+
     inverted = bool(image.mean() > 127) if dark_text is None else dark_text
     lines = segment_page(image, inverted)
     # the lexicon resolves accents and flow hyphenation, so both flags need it

@@ -32,6 +32,7 @@ src/
 O pipeline é: `page_generator`/`generator` escrevem shards em
 `data/raw/words-dataset` → `train` ajusta o CRNN → `recognize` usa
 `analyzer` para cortar as linhas e `postprocess` para corrigir o texto.
+Os diagramas das duas etapas estão em [`docs/data-flow.md`](docs/data-flow.md).
 
 ## Ambiente
 
@@ -66,6 +67,14 @@ o passo normal para abrir parágrafo (padrão `1.5`):
 ```powershell
 .venv\Scripts\python.exe -m src.ocr.recognize 11263 --flow
 .venv\Scripts\python.exe -m src.ocr.recognize 11263 --para-ratio 1.8
+```
+
+A segmentação descarta o que não é texto (moldura, régua fina, caixa quase sem
+tinta) e separa duas linhas fundidas. `--debug` lista cada caixa descartada com
+o motivo (`frame`, `thin`, `empty`):
+
+```powershell
+.venv\Scripts\python.exe -m src.ocr.recognize 11263 --debug
 ```
 
 ### Tela de debug

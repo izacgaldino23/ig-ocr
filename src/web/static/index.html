@@ -185,7 +185,8 @@
       $("dark_text").checked = data.dark_text_used;
       $("dark_text-auto").textContent = "detectado: " + (data.dark_text_used ? "sim" : "não");
       $("analyze-meta").textContent =
-        data.lines.length + " linhas · " + data.ms + " ms · " + data.width + "×" + data.height;
+        data.lines.length + " linhas · " + data.ms + " ms · " + data.width + "×" + data.height +
+        (data.page_warped ? " · página recortada" : "");
       $("stage1").hidden = false;
       $("stage2").hidden = data.lines.length === 0;
       $("fulltext").hidden = true;

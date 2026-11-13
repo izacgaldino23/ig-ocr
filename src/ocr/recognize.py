@@ -62,10 +62,10 @@ def recognize_line(
 
 
 def process_page(
-    image_name: str, model: CRNN, device: torch.device
+    image_name: str, model: CRNN, device: torch.device, dropped: list | None = None
 ) -> list[tuple[Line, str]]:
     # pages are rendered black text on white background
-    img, lines = character_segmentation(image_name, inverted=True)
+    img, lines = character_segmentation(image_name, inverted=True, dropped=dropped)
 
     return [(line, recognize_line(model, device, img, line)) for line in lines]
 
@@ -196,6 +196,11 @@ if __name__ == "__main__":
         action="store_true",
         help="join a paragraph's wrapped lines with a space instead of a newline",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="print every box the segmenter discarded and why",
+    )
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -207,7 +212,8 @@ if __name__ == "__main__":
     # Disable gradient calculation.
     model.eval()
 
-    results = process_page(args.image, model, device)
+    dropped: list = [] if args.debug else None
+    results = process_page(args.image, model, device, dropped)
     paragraphs = group_paragraphs([line for line, _ in results], args.para_ratio)
 
     # the lexicon resolves hyphenation in flow text, so both flags need it
@@ -219,6 +225,12 @@ if __name__ == "__main__":
 
     print(f"Image: {args.image}")
     print(f"Predicted text:\n{predicted_text}\n")
+
+    if dropped is not None:
+        print(f"Discarded boxes: {len(dropped)}")
+        for reason, box in dropped:
+            print(f"  {reason:6} {box}")
+        print()
 
     has_gt = test_image_path(f"{args.image}.json").exists()
     if args.postprocess:
