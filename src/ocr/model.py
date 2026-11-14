@@ -23,7 +23,7 @@ BLANK_IDX = 0  # Blank from CTC character index
 
 
 class OCRDataset(Dataset):
-    def __init__(self, dataset_dir, train=True, img_height=32) -> None:
+    def __init__(self, dataset_dir, train=True, img_height=48) -> None:
         self.dataset_dir = dataset_dir / ("train" if train else "test")
         self.img_height = img_height
 
@@ -137,7 +137,9 @@ class CRNN(nn.Module):
         self.name = name
 
         # 1. Feature Extractor (CNN)
-        # Input: (B, 1, 32, img_width) -> Reduce height to 1 e width to img_width / 4 (4x width reducing)
+        # Input: (B, 1, 48, img_width) -> Reduce height to 1 e width to img_width / 4 (4x width reducing)
+        # 48px keeps accents and cap/x-height apart: 48 -> 24 -> 12 rows before
+        # the vertical collapse, instead of 32 -> 16 -> 8
         self.cnn = nn.Sequential(
             nn.Conv2d(1, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
@@ -152,7 +154,7 @@ class CRNN(nn.Module):
             nn.BatchNorm2d(256),
             nn.ReLU(),
             nn.MaxPool2d(
-                kernel_size=(8, 1), stride=(8, 1)
+                kernel_size=(12, 1), stride=(12, 1)
             ),  # Reduce height to 1: (B, 256, 1, W) -> T = W (img_width / 4) slices
         )
 

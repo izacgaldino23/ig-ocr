@@ -15,9 +15,9 @@ from src.utils.paths import test_image_path
 
 
 # process_line receives a cut of the original image of a whole text line
-# resizes it proportionally to 32px height (training default) and
-# returns a [1, 1, 32, W] tensor ready for the CRNN model
-def process_line(roi: np.ndarray, img_height=32) -> torch.Tensor:
+# resizes it proportionally to 48px height (training default) and
+# returns a [1, 1, 48, W] tensor ready for the CRNN model
+def process_line(roi: np.ndarray, img_height=48) -> torch.Tensor:
     # 1px white border so the ink never touches the tensor edges
     roi = cv2.copyMakeBorder(roi, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=255)
     h, w = roi.shape
@@ -28,7 +28,7 @@ def process_line(roi: np.ndarray, img_height=32) -> torch.Tensor:
 
     tensor = torch.from_numpy(resized).unsqueeze(0).float().div_(255)
 
-    # add batch dimension: [1, 1, 32, W]
+    # add batch dimension: [1, 1, 48, W]
     return tensor.unsqueeze(0)
 
 
