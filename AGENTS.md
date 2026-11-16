@@ -39,14 +39,18 @@
 Run modules from the repository root and use the project interpreter, for example:
 
 ```powershell
-.venv\Scripts\python.exe -m src.ocr.recognize 11263 0.4.8-ft
-.venv\Scripts\python.exe -m src.training.evaluate --input 0.4.8-ft
+.venv\Scripts\python.exe -m src.ocr.recognize 11263 meu-modelo
+.venv\Scripts\python.exe -m src.training.evaluate --input meu-modelo
 ```
 
-Start the debug UI (binds 127.0.0.1:8000, CPU inference):
+`recognize`, `train` and `evaluate` take the checkpoint name with no default
+(the file lives in `artifacts\checkpoints\ocr\`, without `.pth`).
+
+Start the debug UI (binds 127.0.0.1:8000, CPU inference). `OCR_CHECKPOINT` is
+required:
 
 ```powershell
-.venv\Scripts\python.exe -m src.web.app
+$env:OCR_CHECKPOINT="meu-modelo"; .venv\Scripts\python.exe -m src.web.app
 ```
 
 Run the tests with:

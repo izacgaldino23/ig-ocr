@@ -41,7 +41,8 @@ flowchart LR
 ```
 
 As duas rotas segmentam de novo em vez de receber as caixas do cliente, então o
-servidor não guarda estado entre etapas. O modelo carrega uma vez no `lifespan`.
+servidor não guarda estado entre etapas. O modelo carrega uma vez no `lifespan`;
+o nome vem da variável `OCR_CHECKPOINT`, que é obrigatória.
 
 ## Treino: corpus → pesos
 
@@ -50,13 +51,16 @@ flowchart LR
     corpus[(floresta)] --> frases[frases]
     frases --> render[PageGenerator.render]
     render --> page[imagem da página + clues]
-    page --> cortes[cortes de linha<br/>rótulo filtrado pelo ALPHABET]
+    page --> cortes[cortes de linha<br/>rótulo no ALPHABET<br/>bbox fora da página descartada]
     cortes --> shards[(shards<br/>+ font_usage.csv)]
     shards --> treino[train.py]
 ```
 
 O `font_usage.csv` guarda o `font_id` de cada amostra; sem ele o
 `compare_font_errors.py` não consegue abrir o shard.
+
+Um corte cuja bbox passa da borda da página é descartado: o Pillow preencheria
+a área faltante com preto e o rótulo continuaria com o texto inteiro.
 
 ## Onde fica cada etapa
 

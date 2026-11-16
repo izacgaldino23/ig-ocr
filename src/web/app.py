@@ -33,7 +33,7 @@ from src.ocr.recognize import (
     recognize_line,
 )
 
-CHECKPOINT = os.environ.get("OCR_CHECKPOINT", "0.4.9-ft")
+CHECKPOINT = os.environ.get("OCR_CHECKPOINT", "")
 DEVICE = torch.device("cpu")
 MAX_WIDTH = 2500
 MAX_UPLOAD = 20 * 1024 * 1024
@@ -47,6 +47,11 @@ INFERENCE_LOCK = threading.Lock()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global MODEL
+    if not CHECKPOINT:
+        raise RuntimeError(
+            "defina OCR_CHECKPOINT com o nome de um checkpoint de "
+            "artifacts/checkpoints/ocr (ex.: OCR_CHECKPOINT=meu-modelo)"
+        )
     model = CRNN(len(CHAR2IDX) + 1, CHECKPOINT)
     if not model.load_if_exists():
         raise RuntimeError(f"checkpoint {CHECKPOINT} not found")

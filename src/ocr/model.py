@@ -217,8 +217,8 @@ class CRNN(nn.Module):
                     self.fc.weight.data[:rows] = fc_weight[:rows]
                     self.fc.bias.data[:rows] = state_dict["fc.bias"][:rows]
 
-                # shortcut: bias below -5 means the row was never trained (runs
-                # 0.4.6/0.4.7 muted new chars at -10); re-init those too
+                # shortcut: bias below -5 means the row was never trained (a
+                # fine-tune at a low lr cannot lift it); re-init those too
                 start = rows
                 if start == self.fc.out_features:
                     muted = (self.fc.bias.data < -5).nonzero()

@@ -261,8 +261,8 @@ class Train:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CRNN fine-tuning")
-    parser.add_argument("--input", default="0.4.8-ft", help="checkpoint to load")
-    parser.add_argument("--output", default="0.4.9-ft", help="checkpoint to write")
+    parser.add_argument("--input", required=True, help="checkpoint to load")
+    parser.add_argument("--output", required=True, help="checkpoint to write")
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument(
         "--batch-size",

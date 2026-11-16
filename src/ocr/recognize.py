@@ -179,7 +179,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="CRNN page OCR")
     parser.add_argument("image", help="image name inside data/test_images")
-    parser.add_argument("checkpoint", nargs="?", default="0.4.8-ft")
+    parser.add_argument(
+        "checkpoint", help="checkpoint name inside artifacts/checkpoints/ocr"
+    )
     parser.add_argument(
         "--postprocess",
         action="store_true",
