@@ -197,15 +197,16 @@ class PageGenerator:
                 greater = right >= x2
                 is_last_word = idx == len(words) - 1
 
-                if greater or is_last_word:
-                    if greater and not is_last_word:
-                        line_text = line_text[:-1]
+                if not (greater or is_last_word):
+                    continue
 
+                # a word that does not fit starts the next line, even the last
+                # one: drawing it here pushes the ink past the page edge, and
+                # the crop of that line comes back padded black by Pillow
+                overflow = greater and len(line_text) > 1
+                if overflow:
+                    line_text = line_text[:-1]
                     phrase = " ".join(line_text)
-
-                    if not is_last_word:
-                        line_text = [words[idx]]
-
                     left, top, right, bottom = draw.textbbox(
                         (curr_x, curr_y),
                         phrase,
@@ -213,26 +214,47 @@ class PageGenerator:
                         spacing=spacing,
                     )
 
-                    # ink box returned by textbbox, not the draw anchor,
-                    # so crops never clip ascenders/descenders
-                    line = ContentLine(phrase)
-                    line.set_bbox(left, top, right - left, bottom - top)
-                    lines.append(line)
+                # ink box returned by textbbox, not the draw anchor,
+                # so crops never clip ascenders/descenders
+                line = ContentLine(phrase)
+                line.set_bbox(left, top, right - left, bottom - top)
+                lines.append(line)
 
-                    draw.text(
-                        (curr_x, curr_y),
-                        phrase,
-                        fill=random.randint(0, 20),
-                        font=font,
-                        spacing=spacing,
-                    )
+                draw.text(
+                    (curr_x, curr_y),
+                    phrase,
+                    fill=random.randint(0, 20),
+                    font=font,
+                    spacing=spacing,
+                )
 
-                    curr_x = x
-                    curr_y += line_height + spacing
-                    line_text = []
+                curr_x = x
+                curr_y += line_height + spacing
+                line_text = [words[idx]] if overflow else []
 
-                    if curr_y > y2:
-                        break
+                if curr_y > y2:
+                    break
+
+            # a word carried past the last iteration still needs its own line
+            if line_text and curr_y <= y2:
+                phrase = " ".join(line_text)
+                left, top, right, bottom = draw.textbbox(
+                    (curr_x, curr_y),
+                    phrase,
+                    font=font,
+                    spacing=spacing,
+                )
+                line = ContentLine(phrase)
+                line.set_bbox(left, top, right - left, bottom - top)
+                lines.append(line)
+                draw.text(
+                    (curr_x, curr_y),
+                    phrase,
+                    fill=random.randint(0, 20),
+                    font=font,
+                    spacing=spacing,
+                )
+                curr_y += line_height + spacing
 
             curr_y += line_height + spacing
             if curr_y > y2:

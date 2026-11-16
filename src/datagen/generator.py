@@ -298,6 +298,10 @@ class TxtRecognitionGenerator:
                 if any(char not in CHAR2IDX for char in line.text):
                     continue
                 x, y, w, h = line.bbox.get_values()
+                # Pillow pads an out-of-bounds crop with black, which would pair
+                # a black block with the full label; drop the line instead
+                if x + w > image.width or y + h > image.height:
+                    continue
                 samples.append((image.crop((x, y, x + w, y + h)), line.text, font_path))
 
         self._write_shard(samples, train, clear)
@@ -428,7 +432,7 @@ class TxtRecognitionGenerator:
 if __name__ == "__main__":
     trg = TxtRecognitionGenerator()
 
-    text_size = 32
+    text_size = 48
     blur = False
 
     words_by_image = [i + 1 for i in range(8)]
@@ -444,7 +448,8 @@ if __name__ == "__main__":
     custom_count = 75
     page_count = 90
 
-    for train in [False, True]:
+    # only the test split is regenerated: the train shards stay as generated
+    for train in [False]:
         words = words_count if train else int(words_count / 3)
         custom = custom_count if train else int(custom_count / 3)  # x * 8
         pages = page_count if train else int(page_count / 3)

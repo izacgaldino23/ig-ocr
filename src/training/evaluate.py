@@ -147,7 +147,7 @@ def evaluate(model_name, device, dataset, test_loader):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CRNN test-set evaluation")
-    parser.add_argument("--input", default="0.4.8-ft", help="checkpoint to evaluate")
+    parser.add_argument("--input", default="0.4.9-ft", help="checkpoint to evaluate")
     args = parser.parse_args()
     models = [args.input]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -158,7 +158,7 @@ if __name__ == "__main__":
         dataset,
         shuffle=False,
         pin_memory=device.type == "cuda",
-        batch_size=32,
+        batch_size=16,
         num_workers=2,
         persistent_workers=False,
         collate_fn=ocr_collate_fn,

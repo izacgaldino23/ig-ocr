@@ -7,6 +7,7 @@ http://127.0.0.1:8000.
 
 import base64
 import io
+import os
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -32,7 +33,7 @@ from src.ocr.recognize import (
     recognize_line,
 )
 
-CHECKPOINT = "0.4.8-ft"
+CHECKPOINT = os.environ.get("OCR_CHECKPOINT", "0.4.9-ft")
 DEVICE = torch.device("cpu")
 MAX_WIDTH = 2500
 MAX_UPLOAD = 20 * 1024 * 1024

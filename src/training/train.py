@@ -109,7 +109,10 @@ class Train:
             persistent_workers=workers > 0,
             collate_fn=ocr_collate_fn,
         )
-        torch.cuda.synchronize(self.device)
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+        else:
+            print("AVISO: CUDA indisponivel - treinando na CPU (muito lento).")
 
         self.loaded_checkpoint = self.model.load_if_exists()
         self.model.to(self.device)
@@ -262,10 +265,35 @@ if __name__ == "__main__":
     parser.add_argument("--output", default="0.4.9-ft", help="checkpoint to write")
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=16,
+        help="linhas por lote; 64 nao cabe em 6 GB com entrada de 48 px",
+    )
+    parser.add_argument("--lr", type=float, default=1e-5, help="lr do backbone")
+    parser.add_argument(
         "--persist",
         help="Save model without considering loaded model accuracy",
         action="store_true",
     )
+    parser.add_argument(
+        "--cpu",
+        action="store_true",
+        help="treinar sem CUDA de proposito (muito lento, so para teste)",
+    )
     args = parser.parse_args()
-    train = Train(args.input, args.output, batch_size=64, persist=args.persist)
+    if not torch.cuda.is_available() and not args.cpu:
+        raise SystemExit(
+            "CUDA indisponivel neste interpretador - um treino de 50 epocas "
+            "levaria ~20h na CPU.\n"
+            "Use .venv\\Scripts\\python.exe -m src.training.train ... "
+            "ou passe --cpu se for de proposito."
+        )
+    train = Train(
+        args.input,
+        args.output,
+        batch_size=args.batch_size,
+        learning_rate=args.lr,
+        persist=args.persist,
+    )
     train.execute(epochs=args.epochs)

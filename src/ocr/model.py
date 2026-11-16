@@ -205,7 +205,8 @@ class CRNN(nn.Module):
     def load_if_exists(self) -> bool:
         file = checkpoint_path(self.name, "ocr")
         if file.exists():
-            content = torch.load(file, weights_only=True)
+            # map_location: checkpoints are saved on whatever device trained them
+            content = torch.load(file, weights_only=True, map_location="cpu")
             state_dict = content["model"]
 
             # ALPHABET grew: keep the learned rows, re-init the appended ones
